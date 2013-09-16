@@ -1,0 +1,16 @@
+#!/usr/bin/env python
+# -*- encoding: utf-8 -*-
+
+def export(bld):
+	build(bld)
+
+def build(bld):
+	bld.program(
+		target = 'ciambad', 
+		source = bld.path.ant_glob('src/*.c'),
+		includes = ['./include'],
+		cppcheck_suppress = 'cppcheck.suppress',
+		cppcheck_skip = True	# disables source code checking
+	)
+
+

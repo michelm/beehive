@@ -1,0 +1,9 @@
+#!/usr/bin/env python
+# -*- encoding: utf-8 -*-
+
+def export(bld):
+	build(bld)
+
+def build(bld):
+	bld.stlib(target='cstlib-example', source=bld.path.ant_glob('src/*.c'))
+
