@@ -1,6 +1,8 @@
 build/*
 downloads/*
 ext/*
+output/*
 .lock-waf*
 **/*.pyc
+**/*~
 
