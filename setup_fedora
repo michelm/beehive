@@ -1,0 +1,24 @@
+#!/usr/bin/sh
+
+yum -y update
+
+yum -y groupinstall "C Development Tools and Libraries"
+
+yum -y install \
+	wget git meld codeblocks codeblocks-libs \
+	waf waf-doc \
+	python-pip \
+	cppcheck python-pygments \
+	dbus dbus-devel dbus-python dbus-python-devel dbus-java dbus-java-javadoc d-feet \
+	json-c json-c-devel \
+	libevent libevent-devel qt-devel \
+	pygobject2 python-psutil \
+	lighttpd lighttpd-fastcgi fcgi fcgi-devel \
+	rrdtool rrdtool-devel rrdtool-doc rrdtool-python \
+	lcm lcm-devel lcm-java lcm-javadoc lcm-python \
+	python-netifaces
+
+
+
+
+

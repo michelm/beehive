@@ -1,0 +1,117 @@
+#!/usr/bin/sh
+
+TOP=`pwd`
+RELEASE=`cat /etc/issue`
+DOWNLOADS=$TOP/downloads
+EXT=$TOP/ext
+PATCHES=$TOP/patches
+
+if [ ! -d $EXT ]
+then
+	mkdir $EXT
+fi
+
+if [ ! -d $DOWNLOADS ]
+then
+	mkdir $DOWNLOADS
+fi
+
+#====================================================================
+# install (using package manager)
+#====================================================================
+if [[ $RELEASE == Fedora* ]]
+then
+	sudo ./setup_fedora
+else
+	echo "System \'$RELEASE\' not supported (yet)!"
+	exit 1
+fi
+
+#====================================================================
+# install (using python pip)
+#====================================================================
+
+#====================================================================
+# qooxdoo
+#====================================================================
+QOOXDOO=qooxdoo-3.0-sdk
+
+if [ ! -d /opt/$QOOXDOO ]
+then
+	if [ ! -e $DOWNLOADS/$QOOXDOO.zip ]
+	then
+		cd $DOWNLOADS
+		wget http://downloads.sourceforge.net/qooxdoo/$QOOXDOO.zip
+	fi
+	sudo unzip $DOWNLOADS/$QOOXDOO.zip -d /opt
+else
+	echo "QOOXDOO already installed at: /opt/$QOOXDOO"
+fi
+
+#====================================================================
+# json-dbus-bridge
+#====================================================================
+if [ ! -d $EXT/json-dbus-bridge ]
+then
+	cd $EXT
+	git clone git://git.pengutronix.de/git/json-dbus-bridge.git
+	cd $EXT/json-dbus-bridge
+	cp $PATCHES/json-dbus-bridge.patch .
+	patch -p1 < json-dbus-bridge.patch
+	./autogen.sh
+	./configure
+	make 
+	sudo make install
+fi
+
+#====================================================================
+# json-dbus-bridge-examples
+#====================================================================
+if [ ! -d $EXT/json-dbus-bridge-examples ]
+then
+	cd $EXT
+	git clone git://git.pengutronix.de/git/json-dbus-bridge-examples.git
+	cd $EXT/json-dbus-bridge-examples
+	cp $PATCHES/json-dbus-bridge-examples.patch .
+	patch -p1 < json-dbus-bridge-examples.patch
+	./autogen.sh
+	./configure --with-qooxdoo-sdk=/opt/qooxdoo-2.1.1-sdk --with-user-role=guest
+	make
+fi
+
+#====================================================================
+# lightweight communication and marshalling
+#====================================================================
+if [ ! -d $EXT/lcm ]
+then
+	mkdir $EXT/lcm
+	cd $EXT/lcm
+	wget http://lcm.googlecode.com/files/2010-huang-olson-moore-lcm-iros.pdf
+
+	cd $DOWNLOADS
+	if [ ! -e lcm-0.9.2.tar.gz ]
+	then
+		wget https://lcm.googlecode.com/files/lcm-0.9.2.tar.gz
+	fi
+	tar -xzvf lcm-0.9.2.tar.gz -C $EXT/lcm
+fi
+
+#====================================================================
+# waf: build system
+#====================================================================
+if [ ! -d $EXT/waf ]
+then
+	mkdir $EXT/waf
+	cd $EXT/waf
+	wget http://docs.waf.googlecode.com/git/book_17/waf.pdf
+
+	cd $DOWNLOADS
+	if [ ! -e waf-1.7.11.tar.bz2 ]
+	then
+		wget http://waf.googlecode.com/files/waf-1.7.11.tar.bz2
+	fi
+	tar -xjvf waf-1.7.11.tar.bz2 -C $EXT/waf
+fi
+
+#--------------------------------------------------------------------
+
