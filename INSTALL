@@ -1,0 +1,7 @@
+INSTALLATION
+=====================
+To install all required packages simply run the setup script, it
+will install all required packages using the system package manager (e.g. yum)
+and download, configure, build and install external packages when needed.
+Note that this setup script requires administration rights.
+
