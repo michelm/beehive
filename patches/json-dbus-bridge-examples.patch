@@ -1,0 +1,277 @@
+Binary files json-dbus-bridge-examples/.git/index and json-dbus-bridge-examples.patched/.git/index differ
+diff -crB json-dbus-bridge-examples/services/python/calculator.py json-dbus-bridge-examples.patched/services/python/calculator.py
+*** json-dbus-bridge-examples/services/python/calculator.py	2013-07-10 21:46:53.672763853 +0200
+--- json-dbus-bridge-examples.patched/services/python/calculator.py	2013-07-10 21:49:13.420724150 +0200
+***************
+*** 1,4 ****
+! #!/usr/bin/env python2.5
+  #
+  # json dbus bridge examples
+  #
+--- 1,4 ----
+! #!/usr/bin/env python
+  #
+  # json dbus bridge examples
+  #
+diff -crB json-dbus-bridge-examples/services/python/hello-world.py json-dbus-bridge-examples.patched/services/python/hello-world.py
+*** json-dbus-bridge-examples/services/python/hello-world.py	2013-07-10 21:46:53.672763853 +0200
+--- json-dbus-bridge-examples.patched/services/python/hello-world.py	2013-07-10 21:49:21.779288279 +0200
+***************
+*** 1,4 ****
+! #!/usr/bin/env python2.5
+  #
+  # json dbus bridge examples
+  #
+--- 1,4 ----
+! #!/usr/bin/env python
+  #
+  # json dbus bridge examples
+  #
+diff -crB json-dbus-bridge-examples/web-gui/calculator/source/class/calculator/Application.js json-dbus-bridge-examples.patched/web-gui/calculator/source/class/calculator/Application.js
+*** json-dbus-bridge-examples/web-gui/calculator/source/class/calculator/Application.js	2013-07-10 21:46:53.675763721 +0200
+--- json-dbus-bridge-examples.patched/web-gui/calculator/source/class/calculator/Application.js	2013-07-10 21:51:29.771608093 +0200
+***************
+*** 51,57 ****
+        this.base(arguments);
+  
+        // Enable logging in debug variant
+!       if (qx.core.Variant.isSet("qx.debug", "on"))
+        {
+          // support native logging capabilities, e.g. Firebug for Firefox
+          qx.log.appender.Native;
+--- 51,57 ----
+        this.base(arguments);
+  
+        // Enable logging in debug variant
+!       if (qx.core.Environment.get("qx.debug"))
+        {
+          // support native logging capabilities, e.g. Firebug for Firefox
+          qx.log.appender.Native;
+***************
+*** 116,123 ****
+  
+        var makeOpp = function(text, func, r, c, span)
+        {
+!         if (span == null)
+            span = 1;
+          var button = new qx.ui.form.Button(text);
+          win.add(button, {row: r, column: c, colSpan: span });
+          button.addListener("execute", function(e) {
+--- 116,124 ----
+  
+        var makeOpp = function(text, func, r, c, span)
+        {
+!         if (span == null) {
+            span = 1;
++ 	}
+          var button = new qx.ui.form.Button(text);
+          win.add(button, {row: r, column: c, colSpan: span });
+          button.addListener("execute", function(e) {
+***************
+*** 145,152 ****
+        }
+        else {
+          value = this.__edit.getValue();
+!         if (value == null)
+            value = "";
+        }
+        this.__edit.setValue(value + key);
+      },
+--- 146,154 ----
+        }
+        else {
+          value = this.__edit.getValue();
+!         if (value == null) {
+            value = "";
++ 	}
+        }
+        this.__edit.setValue(value + key);
+      },
+***************
+*** 154,161 ****
+      {
+        this.__win.setStatus("");
+        var current = parseInt(this.__edit.getValue());
+!       if (current == null)
+          current = 0;
+        if ((this.__last == null) || (this.__lastCmd == null)) {
+          this.__last = current;
+        }
+--- 156,164 ----
+      {
+        this.__win.setStatus("");
+        var current = parseInt(this.__edit.getValue());
+!       if (current == null) {
+          current = 0;
++       }
+        if ((this.__last == null) || (this.__lastCmd == null)) {
+          this.__last = current;
+        }
+diff -crB json-dbus-bridge-examples/web-gui/calculator/source/class/calculator/theme/Font.js json-dbus-bridge-examples.patched/web-gui/calculator/source/class/calculator/theme/Font.js
+*** json-dbus-bridge-examples/web-gui/calculator/source/class/calculator/theme/Font.js	2013-07-10 21:46:53.676763677 +0200
+--- json-dbus-bridge-examples.patched/web-gui/calculator/source/class/calculator/theme/Font.js	2013-07-10 21:51:10.309623571 +0200
+***************
+*** 15,28 ****
+  
+    fonts :
+    {
+-     "large" :
+-     {
+-       size : (qx.bom.client.System.WINVISTA || qx.bom.client.System.WIN7) ? 25 : 23,
+-       lineHeight : 1.4,
+-       family : qx.bom.client.Platform.MAC ? [ "Lucida Grande" ] :
+-         (qx.bom.client.System.WINVISTA || qx.bom.client.System.WIN7) ?
+-         [ "Segoe UI", "Candara" ] :
+-         [ "Tahoma", "Liberation Sans", "Arial", "sans-serif" ]
+-     }
+    }
+  });
+--- 15,19 ----
+diff -crB json-dbus-bridge-examples/web-gui/hello-world/source/class/hello_world/Application.js json-dbus-bridge-examples.patched/web-gui/hello-world/source/class/hello_world/Application.js
+*** json-dbus-bridge-examples/web-gui/hello-world/source/class/hello_world/Application.js	2013-07-10 21:46:53.678763589 +0200
+--- json-dbus-bridge-examples.patched/web-gui/hello-world/source/class/hello_world/Application.js	2013-07-10 21:51:53.456372316 +0200
+***************
+*** 44,50 ****
+        this.base(arguments);
+  
+        // Enable logging in debug variant
+!       if (qx.core.Variant.isSet("qx.debug", "on"))
+        {
+          // support native logging capabilities, e.g. Firebug for Firefox
+          qx.log.appender.Native;
+--- 44,50 ----
+        this.base(arguments);
+  
+        // Enable logging in debug variant
+!       if (qx.core.Environment.get("qx.debug"))
+        {
+          // support native logging capabilities, e.g. Firebug for Firefox
+          qx.log.appender.Native;
+***************
+*** 106,113 ****
+        // Add an event listener
+        echoButton.addListener("execute", function(e) {
+          var text = echoEdit.getValue();
+!         if (text == null)
+            text = "";
+          var handler = function(result, error) {
+             if (error == null) {
+               echoLabel.setValue(result);
+--- 106,114 ----
+        // Add an event listener
+        echoButton.addListener("execute", function(e) {
+          var text = echoEdit.getValue();
+!         if (text == null) {
+            text = "";
++ 	}
+          var handler = function(result, error) {
+             if (error == null) {
+               echoLabel.setValue(result);
+diff -crB json-dbus-bridge-examples/web-gui/hello-world/source/class/hello_world/theme/Font.js json-dbus-bridge-examples.patched/web-gui/hello-world/source/class/hello_world/theme/Font.js
+*** json-dbus-bridge-examples/web-gui/hello-world/source/class/hello_world/theme/Font.js	2013-07-10 21:46:53.678763589 +0200
+--- json-dbus-bridge-examples.patched/web-gui/hello-world/source/class/hello_world/theme/Font.js	2013-07-10 21:52:07.454641899 +0200
+***************
+*** 15,29 ****
+  
+    fonts :
+    {
+-     "default" :
+-     {
+-       size : (qx.bom.client.System.WINVISTA || qx.bom.client.System.WIN7) ? 17 : 15,
+-       lineHeight : 1.4,
+-       family : qx.bom.client.Platform.MAC ? [ "Lucida Grande" ] :
+-         (qx.bom.client.System.WINVISTA || qx.bom.client.System.WIN7) ?
+-         [ "Segoe UI", "Candara" ] :
+-         [ "Tahoma", "Liberation Sans", "Arial", "sans-serif" ],
+-       bold : true
+-     }
+    }
+  });
+--- 15,19 ----
+diff -crB json-dbus-bridge-examples/web-gui/logging/source/class/logging/Application.js json-dbus-bridge-examples.patched/web-gui/logging/source/class/logging/Application.js
+*** json-dbus-bridge-examples/web-gui/logging/source/class/logging/Application.js	2013-07-10 21:46:53.681763458 +0200
+--- json-dbus-bridge-examples.patched/web-gui/logging/source/class/logging/Application.js	2013-07-10 21:52:24.976727684 +0200
+***************
+*** 48,54 ****
+  		this.base(arguments);
+  
+  		// Enable logging in debug variant
+! 		if (qx.core.Variant.isSet("qx.debug", "on"))
+  		{
+  			// support native logging capabilities, e.g. Firebug for Firefox
+  			qx.log.appender.Native;
+--- 48,54 ----
+  		this.base(arguments);
+  
+  		// Enable logging in debug variant
+!       		if (qx.core.Environment.get("qx.debug"))
+  		{
+  			// support native logging capabilities, e.g. Firebug for Firefox
+  			qx.log.appender.Native;
+diff -crB json-dbus-bridge-examples/web-gui/login/source/class/login/Application.js json-dbus-bridge-examples.patched/web-gui/login/source/class/login/Application.js
+*** json-dbus-bridge-examples/web-gui/login/source/class/login/Application.js	2013-07-10 21:46:53.683763370 +0200
+--- json-dbus-bridge-examples.patched/web-gui/login/source/class/login/Application.js	2013-07-10 21:52:45.429660516 +0200
+***************
+*** 47,53 ****
+  		this.base(arguments);
+  
+  		// Enable logging in debug variant
+! 		if (qx.core.Variant.isSet("qx.debug", "on"))
+  		{
+  			// support native logging capabilities, e.g. Firebug for Firefox
+  			qx.log.appender.Native;
+--- 47,53 ----
+  		this.base(arguments);
+  
+  		// Enable logging in debug variant
+!       		if (qx.core.Environment.get("qx.debug"))
+  		{
+  			// support native logging capabilities, e.g. Firebug for Firefox
+  			qx.log.appender.Native;
+diff -crB json-dbus-bridge-examples/web-gui/plot/source/class/plot/Application.js json-dbus-bridge-examples.patched/web-gui/plot/source/class/plot/Application.js
+*** json-dbus-bridge-examples/web-gui/plot/source/class/plot/Application.js	2013-07-10 21:46:53.685763283 +0200
+--- json-dbus-bridge-examples.patched/web-gui/plot/source/class/plot/Application.js	2013-07-10 21:53:17.300997564 +0200
+***************
+*** 49,55 ****
+  		this.base(arguments);
+  
+  		// Enable logging in debug variant
+! 		if (qx.core.Variant.isSet("qx.debug", "on"))
+  		{
+  			// support native logging capabilities, e.g. Firebug for Firefox
+  			qx.log.appender.Native;
+--- 49,55 ----
+  		this.base(arguments);
+  
+  		// Enable logging in debug variant
+!       		if (qx.core.Environment.get("qx.debug"))
+  		{
+  			// support native logging capabilities, e.g. Firebug for Firefox
+  			qx.log.appender.Native;
+***************
+*** 124,134 ****
+  		}
+  		var data = [];
+  		var start = this.__data.length - 99;
+! 		if (start < 0)
+  			start = 0;
+  		var i;
+! 		for (i = start; i < this.__data.length; ++i)
+  			data.push([i-start, this.__data[i][1]]);
+  		data.push([i-start, ret])
+  		this.__data = data;
+  		this.__loadLabel.setValue(this.tr("CPU Load: %1%", ret));
+--- 124,136 ----
+  		}
+  		var data = [];
+  		var start = this.__data.length - 99;
+! 		if (start < 0) {
+  			start = 0;
++ 		}
+  		var i;
+! 		for (i = start; i < this.__data.length; ++i) {
+  			data.push([i-start, this.__data[i][1]]);
++ 		}
+  		data.push([i-start, ret])
+  		this.__data = data;
+  		this.__loadLabel.setValue(this.tr("CPU Load: %1%", ret));
