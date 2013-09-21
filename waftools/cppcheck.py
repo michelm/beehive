@@ -9,7 +9,7 @@
 # query stdout and look for:
 #	'#include "..." search starts here:'				<-- start
 #	'#include <...> search starts here:'				<-- skip
-# 	'/usr/lib/gcc/x86_64-redhat-linux/4.8.1/include'	<-- use this one (startswith '/')
+#	'/usr/lib/gcc/x86_64-redhat-linux/4.8.1/include'	<-- use this one (startswith '/')
 #	'/usr/local/include'								<-- use this one (startswith '/')
 #	'/usr/include'										<-- use this one (startswith '/')
 #	'End of search list.'								<-- end (does not startwith '/' nor with '#')
@@ -123,6 +123,7 @@ def options(opt):
 		default=False, action='store_true', 
 		help='forced check for missing buildin include files, e.g. stdio.h (default=False)')
 
+
 def configure(conf):
 	if conf.options.cppcheck_skip:
 		conf.env.CPPCHECK_SKIP = [True]
@@ -130,7 +131,7 @@ def configure(conf):
 
 
 @TaskGen.feature('c')
-@TaskGen.feature('c++')
+@TaskGen.feature('cxx')
 def cppcheck_execute(self):
 	if len(self.bld.env.CPPCHECK_SKIP) or self.bld.options.cppcheck_skip:
 		return
@@ -153,7 +154,7 @@ def _tgen_create_cmd(self):
 	cmd  = '%s' % self.env.CPPCHECK
 	args = ['--inconclusive','--max-configs=50','--report-progress','--verbose','--xml','--xml-version=2']
 
-	if 'c++' in getattr(self, 'features', []):
+	if 'cxx' in getattr(self, 'features', []):
 		args.append('--language=c++')
 		args.append('--std=%s' % self.bld.options.cppcheck_std_cxx)
 	else:
@@ -181,8 +182,9 @@ class cppcheck(Task.Task):
 
 	def run(self):
 		stderr = self.generator.bld.cmd_and_log(self.cmd, quiet=Context.STDERR, output=Context.STDERR)
+		check = '%s<command>\n  %s\n</command>\n' % (stderr, '\n  '.join(self.cmd.split(' ')))
 		node = self.generator.path.get_bld().find_or_declare('cppcheck.xml')
-		node.write(stderr)
+		node.write(check)
 		report = self._get_report(stderr)
 		index = self._create_html_report(report)
 		self._errors_evaluate(report, index)
@@ -208,7 +210,7 @@ class cppcheck(Task.Task):
 		self._create_css_file()
 		return index
 
-	def	_create_html_files(self, reports):
+	def _create_html_files(self, reports):
 		sources = {}
 		reports = [r for r in reports if r.has_key('file')]
 		for report in reports:
@@ -260,7 +262,7 @@ class cppcheck(Task.Task):
 		node = self.generator.path.get_bld().find_or_declare(htmlfile)
 		node.write(s)
 
-	def	_create_html_index(self, files):
+	def _create_html_index(self, files):
 		name = self.generator.get_name()
 		root = ElementTree.fromstring(CPPCHECK_HTML_FILE)
 		title = root.find('head/title')
@@ -307,7 +309,7 @@ class cppcheck(Task.Task):
 				table.append(row)
 		content.append(table)
 
-	def	_create_css_file(self):
+	def _create_css_file(self):
 		node = self.generator.path.get_bld().find_or_declare('cppcheck/style.css')
 		node.write(CPPCHECK_CSS_FILE)
 
