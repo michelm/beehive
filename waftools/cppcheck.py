@@ -1,6 +1,18 @@
 #! /usr/bin/env python
 # -*- encoding: utf-8 -*-
 # Michel Mooij, michel.mooij7@gmail.com
+#
+# TODO: 
+# add buildin include paths from gcc itself:
+#	echo | gcc -v -x c -E -
+#
+# query stdout and look for:
+#	'#include "..." search starts here:'				<-- start
+#	'#include <...> search starts here:'				<-- skip
+# 	'/usr/lib/gcc/x86_64-redhat-linux/4.8.1/include'	<-- use this one (startswith '/')
+#	'/usr/local/include'								<-- use this one (startswith '/')
+#	'/usr/include'										<-- use this one (startswith '/')
+#	'End of search list.'								<-- end (does not startwith '/' nor with '#')
 
 """
 Tool Description
@@ -79,7 +91,7 @@ Note: The generation of the html report is based on the cppcheck-htmlreport.py
 script that comes shipped with the cppcheck tool.
 """
 
-import os
+import os, sys
 import xml.etree.ElementTree as ElementTree
 import pygments
 from pygments import formatters, lexers
@@ -107,6 +119,9 @@ def options(opt):
 		default='c++03', action='store', 
 		help='cppcheck standard to use when checking C files (default=c++03)')
 
+	opt.add_option('--cppcheck-check-config', dest='cppcheck_check_config', 
+		default=False, action='store_true', 
+		help='forced check for missing buildin include files, e.g. stdio.h (default=False)')
 
 def configure(conf):
 	if conf.options.cppcheck_skip:
@@ -136,7 +151,7 @@ def _tgen_create_cmd(self):
 	these are nessecary in order to create the correct cppcheck xml report.
 	'''
 	cmd  = '%s' % self.env.CPPCHECK
-	args = ['--inconclusive','--max-configs=50', '--report-progress', '--verbose','--xml','--xml-version=2']
+	args = ['--inconclusive','--max-configs=50','--report-progress','--verbose','--xml','--xml-version=2']
 
 	if 'c++' in getattr(self, 'features', []):
 		args.append('--language=c++')
@@ -144,6 +159,9 @@ def _tgen_create_cmd(self):
 	else:
 		args.append('--language=c')
 		args.append('--std=%s' % self.bld.options.cppcheck_std_c)
+
+	if self.bld.options.cppcheck_check_config:
+		args.append('--check-config')
 
 	if self.bld.options.cppcheck_enable:
 		args.append('--enable=%s' % self.bld.options.cppcheck_enable)
@@ -163,6 +181,8 @@ class cppcheck(Task.Task):
 
 	def run(self):
 		stderr = self.generator.bld.cmd_and_log(self.cmd, quiet=Context.STDERR, output=Context.STDERR)
+		node = self.generator.path.get_bld().find_or_declare('cppcheck.xml')
+		node.write(stderr)
 		report = self._get_report(stderr)
 		index = self._create_html_report(report)
 		self._errors_evaluate(report, index)
@@ -171,15 +191,15 @@ class cppcheck(Task.Task):
 	def _get_report(self, xml_string):
 		report = []
 		for error in ElementTree.fromstring(xml_string).iter('error'):
-			item = {}
-			item['id'] = error.get('id')
-			item['severity'] = error.get('severity')
-			item['msg'] = error.get('msg')
-			item['verbose'] = error.get('verbose')
+			defect = {}
+			defect['id'] = error.get('id')
+			defect['severity'] = error.get('severity')
+			defect['msg'] = str(error.get('msg')).replace('<','&lt;')
+			defect['verbose'] = error.get('verbose')
 			for location in error.findall('location'):
-				item['file'] = location.get('file')
-				item['line'] = location.get('line')
-			report.append(item)
+				defect['file'] = location.get('file')
+				defect['line'] = location.get('line')
+			report.append(defect)
 		return report
 
 	def _create_html_report(self, report):
@@ -227,15 +247,10 @@ class cppcheck(Task.Task):
 			if div.get('id') == 'content':
 				content = div
 				srcnode = self.generator.bld.root.find_node(sourcefile)
-				hl_lines = [error['line'] for error in errors]
+				hl_lines = [e['line'] for e in errors if e.has_key('line')]
 				formatter = CppcheckHtmlFormatter(linenos=True, style='colorful', hl_lines=hl_lines, lineanchors='line')
-				formatter.errors = errors
+				formatter.errors = [e for e in errors if e.has_key('line')]
 				lexer = pygments.lexers.guess_lexer_for_filename(sourcefile, "")
-
-				# TODO what to do with these styles??
-				# s = "%s" % formatter.get_style_defs('.highlight')
-				# Logs.warn(s)
-
 				s = "%s" % pygments.highlight(srcnode.read(), lexer, formatter)
 				table = ElementTree.fromstring(s)
 				content.append(table)
@@ -277,8 +292,10 @@ class cppcheck(Task.Task):
 			s = '<tr><td colspan="4"><a href="%s">%s</a></td></tr>\n' % (f,name)
 			row = ElementTree.fromstring(s)
 			table.append(row)
-			for e in val['errors']:
-				if e['id'] == 'missingInclude':
+
+			errors = sorted(val['errors'], key=lambda e: int(e['line']) if e.has_key('line') else sys.maxint)
+			for e in errors:
+				if not e.has_key('line'):
 					s = '<tr><td></td><td>%s</td><td>%s</td><td>%s</td></tr>\n' % (e['id'], e['severity'], e['msg'])
 				else:
 					attr = ''
@@ -378,9 +395,8 @@ CPPCHECK_HTML_TABLE = """
 </table>
 """
 
-CPPCHECK_HTML_ERROR = '''
-<span style="border-width: 2px;border-color: black;border-style: solid;background: #ffaaaa;padding: 3px;">&lt;--- %s</span>
-'''
+CPPCHECK_HTML_ERROR = \
+'<span style="background: #ffaaaa;padding: 3px;">&lt;--- %s</span>\n'
 
 CPPCHECK_CSS_FILE = """
 body.body {
