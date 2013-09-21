@@ -79,21 +79,40 @@ Note: The generation of the html report is based on the cppcheck-htmlreport.py
 script that comes shipped with the cppcheck tool.
 """
 
-import xml.sax
+import os
+import xml.etree.ElementTree as ElementTree
 import pygments
-from pygments import formatters
-from pygments import lexers
-from waflib import Task,TaskGen,Logs
+from pygments import formatters, lexers
+from waflib import Task, TaskGen, Logs, Context
+
 
 def options(opt):
-	opt.add_option('--cppcheck-skip', dest='cppcheck_skip', default=False, action='store_true', help='do not check C/C++ sources with cppcheck (default=False)')
-	opt.add_option('--cppcheck-err-resume', dest='cppcheck_err_resume', default=False, action='store_true', help='continue in case of errors (default=False)')
-	opt.add_option('--cppcheck-enable', dest='cppcheck_enable', default='all', action='store', help='cppcheck option --enable=<id> (default=all)')
+	opt.add_option('--cppcheck-skip', dest='cppcheck_skip', 
+		default=False, action='store_true', 
+		help='do not check C/C++ sources (default=False)')
+
+	opt.add_option('--cppcheck-err-resume', dest='cppcheck_err_resume', 
+		default=False, action='store_true', 
+		help='continue in case of errors (default=False)')
+
+	opt.add_option('--cppcheck-enable', dest='cppcheck_enable', 
+		default='all', action='store', 
+		help='cppcheck option --enable=<id> (default=all)')
+
+	opt.add_option('--cppcheck-std-c', dest='cppcheck_std_c', 
+		default='c99', action='store', 
+		help='cppcheck standard to use when checking C files (default=c99)')
+
+	opt.add_option('--cppcheck-std-cxx', dest='cppcheck_std_cxx', 
+		default='c++03', action='store', 
+		help='cppcheck standard to use when checking C files (default=c++03)')
+
 
 def configure(conf):
 	if conf.options.cppcheck_skip:
 		conf.env.CPPCHECK_SKIP = [True]
 	conf.find_program('cppcheck', var='CPPCHECK')
+
 
 @TaskGen.feature('c')
 @TaskGen.feature('c++')
@@ -103,89 +122,73 @@ def cppcheck_execute(self):
 	if getattr(self, 'cppcheck_skip', False):
 		return
 
-	cmd = [str(self.env.CPPCHECK), '-j 4', '--inconclusive','--max-configs=50', '--report-progress', '--verbose', '--xml','--xml-version=2']
-	if 'c++' in getattr(self, 'features', ''):
-		cmd.append('--language=c++')
-		cmd.append('--std=c++03')
-	else:
-		cmd.append('--language=c')
-		cmd.append('--std=c99')
-
-	if self.bld.options.cppcheck_enable:
-		cmd.append('--enable=%s' % self.bld.options.cppcheck_enable)
-
-	cmd += _cppcheck_get_suppress_rules(self)
-
-	sources = self.to_list(getattr(self, 'source', []))
-	includes = self.to_incnodes(self.to_list(self.env.INCLUDES) + self.to_list(getattr(self, 'includes', [])))
-	target = self.path.get_bld().find_or_declare('cppcheck.xml')
-
-	task = self.create_task('cppcheck', src=sources, tgt=target)
-	task.name = self.get_name()
-	task.cmd = cmd
-	task.includes = list(set(includes))
+	task = self.create_task('cppcheck')
+	task.cmd = _tgen_create_cmd(self)
 	task.fatal = []
 	if not self.bld.options.cppcheck_err_resume:
 		task.fatal.append('error')
 
-def _cppcheck_get_suppress_rules(self):
-	rules = []
-	fname = getattr(self, 'cppcheck_suppress', None)
-	if not fname:
-		return rules
-	fnode = self.path.find_resource(fname)
-	if not fnode:
-		return rules
 
-	for line in fnode.read().split('\n'):
-		if not len(line):
-			continue
-		rule = line.split(':')
-		if len(rule) > 1:
-			rule[1] = '%s/%s' %(self.path.get_src().abspath(), rule[1])
-		rules.append('--suppress=%s' % ':'.join(rule))
-	return rules
+def _tgen_create_cmd(self):
+	'''creates cppcheck command string to be executed.
+
+	note that the function uses several fixed flags for the command line;
+	these are nessecary in order to create the correct cppcheck xml report.
+	'''
+	cmd  = '%s' % self.env.CPPCHECK
+	args = ['--inconclusive','--max-configs=50', '--report-progress', '--verbose','--xml','--xml-version=2']
+
+	if 'c++' in getattr(self, 'features', []):
+		args.append('--language=c++')
+		args.append('--std=%s' % self.bld.options.cppcheck_std_cxx)
+	else:
+		args.append('--language=c')
+		args.append('--std=%s' % self.bld.options.cppcheck_std_c)
+
+	if self.bld.options.cppcheck_enable:
+		args.append('--enable=%s' % self.bld.options.cppcheck_enable)
+
+	for src in self.to_list(getattr(self, 'source', [])):
+		args.append('%r' % src)
+	for inc in self.to_incnodes(self.to_list(getattr(self, 'includes', []))):
+		args.append('-I%r' % inc)
+	for inc in self.to_incnodes(self.to_list(self.env.INCLUDES)):
+		args.append('-I%r' % inc)
+	return '%s %s' % (cmd, ' '.join(args))
+
 
 class cppcheck(Task.Task):
+	color = 'PINK'
+	quiet = True
+
 	def run(self):
-		cmd = list(self.cmd)
-		for source in self.inputs:
-			cmd.append(source.abspath())
-		for include in self.includes:
-			cmd.append('-I')
-			cmd.append(include.abspath())
-		target = self.outputs[0]
-
-		cmd = '%s 2> %s' % (' '.join(cmd), target.abspath())
-		res = self.exec_command(cmd=cmd)
-		if res != 0:
-			return res
-
-		reports = self._parse_xml_report(target.abspath())
-		http_index = self._create_html_report(reports)
-		self._errors_evaluate(reports, http_index)
+		stderr = self.generator.bld.cmd_and_log(self.cmd, quiet=Context.STDERR, output=Context.STDERR)
+		report = self._get_report(stderr)
+		index = self._create_html_report(report)
+		self._errors_evaluate(report, index)
 		return 0
 
-	def _parse_xml_report(self, fname):
-		try:
-			content = _CppCheckXmlContentHandler(self.master.bld)
-			xml.sax.parse(open(fname), content)
-		except xml.sax.SAXParseException as err:
-			msg = "cppcheck: failed to parse file(%s), exception(%s)" % (fname, err)
-			self.master.bld.fatal(msg)
-		return content.get_errors()
+	def _get_report(self, xml_string):
+		report = []
+		for error in ElementTree.fromstring(xml_string).iter('error'):
+			item = {}
+			item['id'] = error.get('id')
+			item['severity'] = error.get('severity')
+			item['msg'] = error.get('msg')
+			item['verbose'] = error.get('verbose')
+			for location in error.findall('location'):
+				item['file'] = location.get('file')
+				item['line'] = location.get('line')
+			report.append(item)
+		return report
 
-	def _create_html_report(self, reports):
-		http_dir = '%s/cppcheck' % self.generator.path.get_bld().abspath()
-		http_index = self.generator.path.get_bld().find_or_declare('cppcheck/index.html')
+	def _create_html_report(self, report):
+		files = self._create_html_files(report)
+		index = self._create_html_index(files)
+		self._create_css_file()
+		return index
 
-		files = self._create_html_files(http_dir, reports)
-		self._create_html_index(http_index, files)
-		self._create_css_file(http_dir)
-
-		return str(http_index.abspath())
-
-	def _create_html_files(self, http_dir, reports):
+	def	_create_html_files(self, reports):
 		sources = {}
 		reports = [r for r in reports if r.has_key('file')]
 		for report in reports:
@@ -196,127 +199,189 @@ class cppcheck(Task.Task):
 				sources[name].append(report)
 		
 		files = {}
+		bpath = self.generator.path.get_bld().abspath()
 		names = sources.keys()
-		for n in range(0,len(names)):
-			name = names[n]
-			htmlfile = '%s/%i.html' % (http_dir, n)
-			errors = sources[names[n]]
-			files[name] = { 'htmlfile': htmlfile, 'errors':errors }
+		for i in range(0,len(names)):
+			name = names[i]
+			htmlfile = 'cppcheck/%i.html' % (i)
+			errors = sources[name]
+			files[name] = { 'htmlfile': '%s/%s' % (bpath, htmlfile), 'errors': errors }
 			self._create_html_file(name, htmlfile, errors)
 		return files
 
-	def _create_html_file(self, filename, htmlfile, errors):
-		title = self.generator.get_name()
-		lines = []
-		for error in errors:
-			lines.append(error['line'])
+	def _create_html_file(self, sourcefile, htmlfile, errors):
+		name = self.generator.get_name()
+		root = ElementTree.fromstring(CPPCHECK_HTML_FILE)
+		title = root.find('head/title')
+		title.text = 'cppcheck - report - %s' % name
 
-		stream = open(filename)
-		content = stream.read()
-		stream.close()
+		body = root.find('body')
+		for div in body.findall('div'):
+			if div.get('id') == 'page':
+				page = div
+				break
+		for div in page.findall('div'):
+			if div.get('id') == 'header':
+				h1 = div.find('h1')
+				h1.text = 'cppcheck report - %s' % name
+			if div.get('id') == 'content':
+				content = div
+				srcnode = self.generator.bld.root.find_node(sourcefile)
+				hl_lines = [error['line'] for error in errors]
+				formatter = CppcheckHtmlFormatter(linenos=True, style='colorful', hl_lines=hl_lines, lineanchors='line')
+				formatter.errors = errors
+				lexer = pygments.lexers.guess_lexer_for_filename(sourcefile, "")
 
-		formatter = _CppcheckHtmlFormatter(linenos=True, style='colorful', hl_lines=lines, lineanchors='line')
-		formatter.errors = errors
-		stream = open(htmlfile, 'w')
+				# TODO what to do with these styles??
+				# s = "%s" % formatter.get_style_defs('.highlight')
+				# Logs.warn(s)
 
-		stream.write(HTML_HEAD % (title, formatter.get_style_defs('.highlight'), title))
-		lexer = pygments.lexers.guess_lexer_for_filename(filename, "")
+				s = "%s" % pygments.highlight(srcnode.read(), lexer, formatter)
+				table = ElementTree.fromstring(s)
+				content.append(table)
 
-		stream.write(pygments.highlight(content, lexer, formatter))
-		stream.write(HTML_FOOTER)
-		stream.close()
+		s = ElementTree.tostring(root, method="html")
+		s = CCPCHECK_HTML_TYPE + s
+		node = self.generator.path.get_bld().find_or_declare(htmlfile)
+		node.write(s)
 
-	def _create_html_index(self, http_index, files):
-		title = self.generator.get_name()
+	def	_create_html_index(self, files):
+		name = self.generator.get_name()
+		root = ElementTree.fromstring(CPPCHECK_HTML_FILE)
+		title = root.find('head/title')
+		title.text = 'cppcheck - report - %s' % name
 
-		stream = open(http_index.abspath(), 'w')
-		stream.write(HTML_HEAD % (title, "", title))
-		stream.write("<table>")
-		stream.write("<tr><th>Line</th><th>Id</th><th>Severity</th><th>Message</th></tr>")
+		body = root.find('body')
+		for div in body.findall('div'):
+			if div.get('id') == 'page':
+				page = div
+				break
+		for div in page.findall('div'):
+			if div.get('id') == 'header':
+				h1 = div.find('h1')
+				h1.text = 'cppcheck report - %s' % name
+			if div.get('id') == 'content':
+				content = div
+				self._create_html_table(content, files)
 
-		for filename, data in files.items():
-			stream.write("<tr><td colspan='4'><a href=\"%s\">%s</a></td></tr>" % (data["htmlfile"], filename))
-			for error in data["errors"]:
-				if error['severity'] == 'error':
-					error_class = 'class="error"'
+		s = ElementTree.tostring(root, method="html")
+		s = CCPCHECK_HTML_TYPE + s
+		node = self.generator.path.get_bld().find_or_declare('cppcheck/index.html')
+		node.write(s)
+		return node
+
+	def _create_html_table(self, content, files):
+		table = ElementTree.fromstring(CPPCHECK_HTML_TABLE)
+		for name, val in files.items():
+			f = val['htmlfile']
+			s = '<tr><td colspan="4"><a href="%s">%s</a></td></tr>\n' % (f,name)
+			row = ElementTree.fromstring(s)
+			table.append(row)
+			for e in val['errors']:
+				if e['id'] == 'missingInclude':
+					s = '<tr><td></td><td>%s</td><td>%s</td><td>%s</td></tr>\n' % (e['id'], e['severity'], e['msg'])
 				else:
-					error_class = ''
+					s = '<tr><td><a href="%s#line-%s">%s</a></td>' % (f, e['line'], e['line'])
+					s+= '<td>%s</td><td>%s</td><td class="error">%s</td></tr>\n' % (e['id'], e['severity'], e['msg'])
+				row = ElementTree.fromstring(s)
+				table.append(row)
+		content.append(table)
 
-				if error["id"] == "missingInclude":
-					stream.write("<tr><td></td><td>%s</td><td>%s</td><td>%s</td></tr>" %
-							(error["id"], error["severity"], error["msg"]))
-				else:
-					stream.write("<tr><td><a href='%s#line-%s'>%s</a></td><td>%s</td><td>%s</td><td %s>%s</td></tr>" %
-							(data["htmlfile"], error["line"], error["line"], error["id"],
-								error["severity"], error_class, error["msg"]))
-		stream.write("</table>")
-		stream.write(HTML_FOOTER)
-		stream.close()
-
-	def _create_css_file(self, http_dir):
-		stream = open('%s/style.css' % http_dir, "w")
-		stream.write(CSS_FILE)
-		stream.close()
+	def	_create_css_file(self):
+		node = self.generator.path.get_bld().find_or_declare('cppcheck/style.css')
+		node.write(CPPCHECK_CSS_FILE)
 
 	def _errors_evaluate(self, errors, http_index):
 		name = self.generator.get_name()			
-		msg = 'file://%s' % http_index
 		fatal = self.fatal
-
 		severity = [err['severity'] for err in errors]
+
 		if set(fatal) & set(severity):
 			exc  = "\n"
-			exc +=  "\nccpcheck detected fatal error(s) in task '%s', see report for details:" % name
-			exc += "\n    file://%s" % (http_index)
+			exc += "\nccpcheck detected fatal error(s) in task '%s', see report for details:" % name
+			exc += "\n    file://%r" % (http_index)
 			exc += "\n"
 			self.generator.bld.fatal(exc)
 
-		if len(errors):
+		elif len(errors):
 			msg =  "\nccpcheck detected (possible) problem(s) in task '%s', see report for details:" % name
-			msg += "\n    file://%s" % http_index
+			msg += "\n    file://%r" % http_index
 			msg += "\n"
 			Logs.error(msg)
 
-class _CppCheckXmlContentHandler(xml.sax.handler.ContentHandler):
-	def __init__(self, bld):
-		xml.sax.handler.ContentHandler.__init__(self)
-		self._error = None
-		self._errors = []
-		self.bld = bld
 
-	def get_errors(self):
-		return self._errors
-
-	def startElement(self, name, attributes):
-		if name not in ('error', 'location'):
-			return
-		if name == 'error':
-			self._error = dict()
-		for key in attributes.keys():
-			self._error[str(key)] = str(attributes[key])
-
-	def endElement(self, name):
-		if name == 'error':
-			self._errors.append(self._error)
-			self._error = None
-
-class _CppcheckHtmlFormatter(pygments.formatters.HtmlFormatter):
+class CppcheckHtmlFormatter(pygments.formatters.HtmlFormatter):
 	errors = []
 
 	def wrap(self, source, outfile):
 		line_no = 1
-		for i, t in super(_CppcheckHtmlFormatter, self).wrap(source, outfile):
+		for i, t in super(CppcheckHtmlFormatter, self).wrap(source, outfile):
 			# If this is a source code line we want to add a span tag at the end.
 			if i == 1:
 				for error in self.errors:
 					if int(error['line']) == line_no:
-						t = t.replace('\n', HTML_ERROR % error['msg'])
+						t = t.replace('\n', CPPCHECK_HTML_ERROR % error['msg'])
 				line_no = line_no + 1
 			yield i, t
 
-CSS_FILE = """
+
+CCPCHECK_HTML_TYPE = \
+'<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">\n'
+
+CPPCHECK_HTML_FILE = """
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd" [<!ENTITY nbsp "&#160;">]>
+<html>
+	<head>
+		<title>cppcheck - report - XXX</title>
+		<link href="style.css" rel="stylesheet" type="text/css" />
+		<style type="text/css">
+		</style>
+	</head>
+	<body class="body">
+		<div id="page-header">&nbsp;</div>
+		<div id="page">
+			<div id="header">
+				<h1>cppcheck report - XXX</h1>
+			</div>
+			<div id="menu">
+				<a href="index.html">Defect list</a>
+			</div>
+			<div id="content">
+			</div>
+			<div id="footer">
+				<div>cppcheck - a tool for static C/C++ code analysis</div>
+				<div>
+				Internet: <a href="http://cppcheck.sourceforge.net">http://cppcheck.sourceforge.net</a><br/>
+          		Forum: <a href="http://apps.sourceforge.net/phpbb/cppcheck/">http://apps.sourceforge.net/phpbb/cppcheck/</a><br/>
+				IRC: #cppcheck at irc.freenode.net
+				</div>
+				&nbsp;
+			</div>
+      		&nbsp;
+		</div>
+		<div id="page-footer">&nbsp;</div>
+	</body>
+</html>
+"""
+
+CPPCHECK_HTML_TABLE = """
+<table>
+	<tr>
+		<th>Line</th>
+		<th>Id</th>
+		<th>Severity</th>
+		<th>Message</th>
+	</tr>
+</table>
+"""
+
+CPPCHECK_HTML_ERROR = '''
+<span style="border-width: 2px;border-color: black;border-style: solid;background: #ffaaaa;padding: 3px;">&lt;--- %s</span>
+'''
+
+CPPCHECK_CSS_FILE = """
 body.body {
-    font-family: Arial;
+	font-family: Arial;
     font-size: 13px;
     background-color: black;
     padding: 0px;
@@ -331,137 +396,96 @@ body.body {
     margin: 0px;
 }
 
+th, td {
+	min-width: 100px;
+	text-align: left;
+}
+
 #page-header {
-    clear: both;
-    width: 900px;
-    margin: 20px auto 0px auto;
-    height: 10px;
-        border-bottom-width: 2px;
-        border-bottom-style: solid;
-        border-bottom-color: #aaaaaa;
+	clear: both;
+	width: 900px;
+	margin: 20px auto 0px auto;
+	height: 10px;
+	border-bottom-width: 2px;
+	border-bottom-style: solid;
+	border-bottom-color: #aaaaaa;
 }
 
 #page {
-    width: 860px;
-    margin: auto;
-        border-left-width: 2px;
-        border-left-style: solid;
-        border-left-color: #aaaaaa;
-        border-right-width: 2px;
-        border-right-style: solid;
-        border-right-color: #aaaaaa;
-    background-color: White;
-    padding: 20px;
+	width: 860px;
+	margin: auto;
+	border-left-width: 2px;
+	border-left-style: solid;
+	border-left-color: #aaaaaa;
+	border-right-width: 2px;
+	border-right-style: solid;
+	border-right-color: #aaaaaa;
+	background-color: White;
+	padding: 20px;
 }
 
 #page-footer {
-    clear: both;
-    width: 900px;
-    margin: auto;
-    height: 10px;
-        border-top-width: 2px;
-        border-top-style: solid;
-        border-top-color: #aaaaaa;
+	clear: both;
+	width: 900px;
+	margin: auto;
+	height: 10px;
+	border-top-width: 2px;
+	border-top-style: solid;
+	border-top-color: #aaaaaa;
 }
 
 #header {
-    width: 100%;
-    height: 70px;
-    background-image: url(logo.png);
-    background-repeat: no-repeat;
-    background-position: left top;
-
-    border-bottom-style: solid;
-    border-bottom-width: thin;
-    border-bottom-color: #aaaaaa;
+	width: 100%;
+	height: 70px;
+	background-image: url(logo.png);
+	background-repeat: no-repeat;
+	background-position: left top;
+	border-bottom-style: solid;
+	border-bottom-width: thin;
+	border-bottom-color: #aaaaaa;
 }
 
 #menu {
-    margin-top: 5px;
-    text-align: left;
-    float: left;
-    width: 100px;
-    height: 300px;
+	margin-top: 5px;
+	text-align: left;
+	float: left;
+	width: 100px;
+	height: 300px;
 }
 
 #menu > a {
-    margin-left: 10px;
-    display: block;
+	margin-left: 10px;
+	display: block;
 }
 
 #content {
-    float: left;
-    width: 720px;
-
-    margin: 5px;
-    padding: 0px 10px 10px 10px;
-
-    border-left-style: solid;
-    border-left-width: thin;
-    border-left-color: #aaaaaa;
+	float: left;
+	width: 720px;
+	margin: 5px;
+	padding: 0px 10px 10px 10px;
+	border-left-style: solid;
+	border-left-width: thin;
+	border-left-color: #aaaaaa;
 }
 
 #footer {
-    padding-bottom: 5px;
-    padding-top: 5px;
-    border-top-style: solid;
-    border-top-width: thin;
-    border-top-color: #aaaaaa;
-    clear: both;
-    font-size: 10px;
+	padding-bottom: 5px;
+	padding-top: 5px;
+	border-top-style: solid;
+	border-top-width: thin;
+	border-top-color: #aaaaaa;
+	clear: both;
+	font-size: 10px;
 }
 
 #footer > div {
-    float: left;
-    width: 33%;
+	float: left;
+	width: 33%;
 }
 """
 
-HTML_HEAD = """
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
-<html>
-  <head>
-    <title>CppCheck - Html report - %s</title>
-    <link href="style.css" rel="stylesheet" type="text/css" />
-    <style type="text/css">
-%s
-    </style>
-  </head>
-  <body class="body">
-    <div id="page-header">
-      &nbsp;
-    </div>
-    <div id="page">
-      <div id="header">
-        <h1>CppCheck report - %s</h1>
-      </div>
-      <div id="menu">
-        <a href="index.html">Defect list</a>
-      </div>
-      <div id="content">
-"""
 
-HTML_FOOTER = """
-      </div>
-      <div id="footer">
-        <div>
-          CppCheck - a tool for static C/C++ code analysis
-        </div>
-        <div>
-          Internet: <a href="http://cppcheck.sourceforge.net">http://cppcheck.sourceforge.net</a><br/>
-          Forum: <a href="http://apps.sourceforge.net/phpbb/cppcheck/">http://apps.sourceforge.net/phpbb/cppcheck/</a><br/>
-          IRC: #cppcheck at irc.freenode.net
-        </div>
-        &nbsp;
-      </div>
-      &nbsp;
-    </div>
-    <div id="page-footer">
-      &nbsp;
-    </div>
-  </body>
-</html>
-"""
 
-HTML_ERROR = "<span style=\"border-width: 2px;border-color: black;border-style: solid;background: #ffaaaa;padding: 3px;\">&lt;--- %s</span>\n"
+
+
 
