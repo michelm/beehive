@@ -281,8 +281,11 @@ class cppcheck(Task.Task):
 				if e['id'] == 'missingInclude':
 					s = '<tr><td></td><td>%s</td><td>%s</td><td>%s</td></tr>\n' % (e['id'], e['severity'], e['msg'])
 				else:
+					attr = ''
+					if e['severity'] == 'error':
+						attr = 'class="error"'
 					s = '<tr><td><a href="%s#line-%s">%s</a></td>' % (f, e['line'], e['line'])
-					s+= '<td>%s</td><td>%s</td><td class="error">%s</td></tr>\n' % (e['id'], e['severity'], e['msg'])
+					s+= '<td>%s</td><td>%s</td><td %s>%s</td></tr>\n' % (e['id'], e['severity'], attr, e['msg'])
 				row = ElementTree.fromstring(s)
 				table.append(row)
 		content.append(table)
