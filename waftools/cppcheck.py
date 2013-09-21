@@ -182,13 +182,23 @@ class cppcheck(Task.Task):
 
 	def run(self):
 		stderr = self.generator.bld.cmd_and_log(self.cmd, quiet=Context.STDERR, output=Context.STDERR)
-		check = '%s<command>\n  %s\n</command>\n' % (stderr, '\n  '.join(self.cmd.split(' ')))
-		node = self.generator.path.get_bld().find_or_declare('cppcheck.xml')
-		node.write(check)
+		self._save_xml_report(stderr)
 		report = self._get_report(stderr)
 		index = self._create_html_report(report)
 		self._errors_evaluate(report, index)
 		return 0
+
+	def _save_xml_report(self, s):
+		'''use cppcheck xml result string, add the command string used to invoke cppcheck
+		and save as xml file.
+		'''
+		header = '%s\n' % s.split('\n')[0]
+		root = ElementTree.fromstring(s)
+		cmd = ElementTree.SubElement(root.find('cppcheck'), 'cmd')
+		cmd.text = str(self.cmd)
+		body = ElementTree.tostring(root)
+		node = self.generator.path.get_bld().find_or_declare('cppcheck.xml')
+		node.write(header + body)
 
 	def _get_report(self, xml_string):
 		report = []
