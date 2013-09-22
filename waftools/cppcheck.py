@@ -1,18 +1,6 @@
 #! /usr/bin/env python
 # -*- encoding: utf-8 -*-
 # Michel Mooij, michel.mooij7@gmail.com
-#
-# TODO: 
-# add buildin include paths from gcc itself:
-#	echo | gcc -v -x c -E -
-#
-# query stdout and look for:
-#	'#include "..." search starts here:'				<-- start
-#	'#include <...> search starts here:'				<-- skip
-#	'/usr/lib/gcc/x86_64-redhat-linux/4.8.1/include'	<-- use this one (startswith '/')
-#	'/usr/local/include'								<-- use this one (startswith '/')
-#	'/usr/include'										<-- use this one (startswith '/')
-#	'End of search list.'								<-- end (does not startwith '/' nor with '#')
 
 """
 Tool Description
@@ -107,37 +95,49 @@ def options(opt):
 		default=False, action='store_true', 
 		help='continue in case of errors (default=False)')
 
-	opt.add_option('--cppcheck-enable', dest='cppcheck_enable', 
-		default='all', action='store', 
-		help='cppcheck option --enable=<id> (default=all)')
+	opt.add_option('--cppcheck-bin-enable', dest='cppcheck_bin_enable', 
+		default='warning,performance,portability,style,unusedFunction', action='store',
+		help="cppcheck option '--enable=' for binaries (default=warning,performance,portability,style,unusedFunction)")
 
-	opt.add_option('--cppcheck-std-c', dest='cppcheck_std_c', 
+	opt.add_option('--cppcheck-lib-enable', dest='cppcheck_lib_enable', 
+		default='warning,performance,portability,style', action='store', 
+		help="cppcheck option '--enable=' for libraries (default=warning,performance,portability,style)")
+
+	opt.add_option('--cppcheck-std-c', dest='cppcheck_std_c',
 		default='c99', action='store', 
-		help='cppcheck standard to use when checking C files (default=c99)')
+		help='cppcheck standard to use when checking C (default=c99)')
 
-	opt.add_option('--cppcheck-std-cxx', dest='cppcheck_std_cxx', 
+	opt.add_option('--cppcheck-std-cxx', dest='cppcheck_std_cxx',
 		default='c++03', action='store', 
-		help='cppcheck standard to use when checking C files (default=c++03)')
+		help='cppcheck standard to use when checking C++ (default=c++03)')
 
 	opt.add_option('--cppcheck-check-config', dest='cppcheck_check_config', 
 		default=False, action='store_true', 
 		help='forced check for missing buildin include files, e.g. stdio.h (default=False)')
 
+	opt.add_option('--cppcheck-max-configs', dest='cppcheck_max_configs',
+		default='20', action='store', 
+		help='maximum preprocessor (--max-configs) define iterations (default=20)')
+
 
 def configure(conf):
 	if conf.options.cppcheck_skip:
 		conf.env.CPPCHECK_SKIP = [True]
+	conf.env.CPPCHECK_STD_C = conf.options.cppcheck_std_c
+	conf.env.CPPCHECK_STD_CXX = conf.options.cppcheck_std_cxx
+	conf.env.CPPCHECK_MAX_CONFIGS = conf.options.cppcheck_max_configs
+	conf.env.CPPCHECK_BIN_ENABLE = conf.options.cppcheck_bin_enable
+	conf.env.CPPCHECK_LIB_ENABLE = conf.options.cppcheck_lib_enable
 	conf.find_program('cppcheck', var='CPPCHECK')
 
 
 @TaskGen.feature('c')
 @TaskGen.feature('cxx')
 def cppcheck_execute(self):
-	if len(self.bld.env.CPPCHECK_SKIP) or self.bld.options.cppcheck_skip:
+	if len(self.env.CPPCHECK_SKIP) or self.bld.options.cppcheck_skip:
 		return
 	if getattr(self, 'cppcheck_skip', False):
 		return
-
 	task = self.create_task('cppcheck')
 	task.cmd = _tgen_create_cmd(self)
 	task.fatal = []
@@ -146,26 +146,31 @@ def cppcheck_execute(self):
 
 
 def _tgen_create_cmd(self):
-	'''creates cppcheck command string to be executed.
+	features = getattr(self, 'features', [])
+	std_c = self.env.CPPCHECK_STD_C
+	std_cxx = self.env.CPPCHECK_STD_CXX
+	max_configs = self.env.CPPCHECK_MAX_CONFIGS
+	bin_enable = self.env.CPPCHECK_BIN_ENABLE
+	lib_enable = self.env.CPPCHECK_LIB_ENABLE
 
-	note that the function uses several fixed flags for the command line;
-	these are nessecary in order to create the correct cppcheck xml report.
-	'''
 	cmd  = '%s' % self.env.CPPCHECK
-	args = ['--inconclusive','--max-configs=50','--report-progress','--verbose','--xml','--xml-version=2']
+	args = ['--inconclusive','--report-progress','--verbose','--xml','--xml-version=2']
+	args.append('--max-configs=%s' % max_configs)
 
-	if 'cxx' in getattr(self, 'features', []):
+	if 'cxx' in features:
 		args.append('--language=c++')
-		args.append('--std=%s' % self.bld.options.cppcheck_std_cxx)
+		args.append('--std=%s' % std_cxx)
 	else:
 		args.append('--language=c')
-		args.append('--std=%s' % self.bld.options.cppcheck_std_c)
+		args.append('--std=%s' % std_c)
 
 	if self.bld.options.cppcheck_check_config:
 		args.append('--check-config')
 
-	if self.bld.options.cppcheck_enable:
-		args.append('--enable=%s' % self.bld.options.cppcheck_enable)
+	if set(['cprogram','cxxprogram']) & set(features):
+		args.append('--enable=%s' % bin_enable)
+	else:
+		args.append('--enable=%s' % lib_enable)
 
 	for src in self.to_list(getattr(self, 'source', [])):
 		args.append('%r' % src)
@@ -177,15 +182,14 @@ def _tgen_create_cmd(self):
 
 
 class cppcheck(Task.Task):
-	color = 'PINK'
 	quiet = True
 
 	def run(self):
 		stderr = self.generator.bld.cmd_and_log(self.cmd, quiet=Context.STDERR, output=Context.STDERR)
 		self._save_xml_report(stderr)
-		report = self._get_report(stderr)
-		index = self._create_html_report(report)
-		self._errors_evaluate(report, index)
+		defects = self._get_defects(stderr)
+		index = self._create_html_report(defects)
+		self._errors_evaluate(defects, index)
 		return 0
 
 	def _save_xml_report(self, s):
@@ -200,8 +204,11 @@ class cppcheck(Task.Task):
 		node = self.generator.path.get_bld().find_or_declare('cppcheck.xml')
 		node.write(header + body)
 
-	def _get_report(self, xml_string):
-		report = []
+	def _get_defects(self, xml_string):
+		'''evaluate the xml string returned by cppcheck (on sdterr) and use it to create
+		a list of defects.
+		'''
+		defects = []
 		for error in ElementTree.fromstring(xml_string).iter('error'):
 			defect = {}
 			defect['id'] = error.get('id')
@@ -211,24 +218,24 @@ class cppcheck(Task.Task):
 			for location in error.findall('location'):
 				defect['file'] = location.get('file')
 				defect['line'] = location.get('line')
-			report.append(defect)
-		return report
+			defects.append(defect)
+		return defects
 
-	def _create_html_report(self, report):
-		files = self._create_html_files(report)
+	def _create_html_report(self, defects):
+		files = self._create_html_files(defects)
 		index = self._create_html_index(files)
 		self._create_css_file()
 		return index
 
-	def _create_html_files(self, reports):
+	def _create_html_files(self, defects):
 		sources = {}
-		reports = [r for r in reports if r.has_key('file')]
-		for report in reports:
-			name = report['file']
+		defects = [defect for defect in defects if defect.has_key('file')]
+		for defect in defects:
+			name = defect['file']
 			if not sources.has_key(name):
-				sources[name] = [report]
+				sources[name] = [defect]
 			else:
-				sources[name].append(report)
+				sources[name].append(defect)
 		
 		files = {}
 		bpath = self.generator.path.get_bld().abspath()
@@ -327,6 +334,7 @@ class cppcheck(Task.Task):
 		name = self.generator.get_name()			
 		fatal = self.fatal
 		severity = [err['severity'] for err in errors]
+		problems = [err for err in errors if err['severity'] != 'information']
 
 		if set(fatal) & set(severity):
 			exc  = "\n"
@@ -335,7 +343,7 @@ class cppcheck(Task.Task):
 			exc += "\n"
 			self.generator.bld.fatal(exc)
 
-		elif len(errors):
+		elif len(problems):
 			msg =  "\nccpcheck detected (possible) problem(s) in task '%s', see report for details:" % name
 			msg += "\n    file://%r" % http_index
 			msg += "\n"
