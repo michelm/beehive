@@ -38,17 +38,14 @@ The example shown below for a C program will be used as input for cppcheck when
 building the task.
 
 	def build(bld):
-		bld.program(
-				name='foo', 
-				src='foobar.c'
-		)
+		bld.program(name='foo', src='foobar.c')
 
 The result of the source code analysis will be stored both as xml and html 
 files in the build location for the task. Should any error be detected by 
 cppcheck the build will be aborted and a link to the html report will be shown.
 
 When needed source code checking by cppcheck can be disabled per task, per 
-detected error or warning for a particular task. It can be also be disbled for 
+detected error or warning for a particular task. It can be also be disabled for 
 all tasks.
 
 In order to exclude a task from source code checking add the skip option to the
@@ -58,12 +55,12 @@ task as shown below:
 		bld.program(
 				name='foo',
 				src='foobar.c'
-				cppcheck_skip=True 	# skip source code checking
+				cppcheck_skip=True
 		)
 
 When needed problems detected by cppcheck may be suppressed using a file 
 containing a list of suppression rules. The relative or absolute path to this 
-file can added to the build task as shown in the example below:
+file can be added to the build task as shown in the example below:
 
 		bld.program(
 				name='bar',
@@ -74,16 +71,34 @@ file can added to the build task as shown in the example below:
 A cppcheck suppress file should contain one suppress rule per line. Each of 
 these rules will be passed as an '--suppress=<rule>' argument to cppcheck.
 
+Dependencies
+================
+This waftool depends on the python pygments module, it is used for source code 
+syntax highlighting when creating the html reports. see http://pygments.org/ for 
+more information on this package.
 
-Note: The generation of the html report is based on the cppcheck-htmlreport.py 
+Remarks
+================
+The generation of the html report is originally based on the cppcheck-htmlreport.py 
 script that comes shipped with the cppcheck tool.
 """
 
 import os, sys
 import xml.etree.ElementTree as ElementTree
-import pygments
-from pygments import formatters, lexers
 from waflib import Task, TaskGen, Logs, Context
+
+PYGMENTS_EXC_MSG= '''
+The required module 'pygments' could not be found. Please install it using your 
+platform package manager (e.g. apt-get or yum), using 'pip' or 'easy_install',
+see 'http://pygments.org/download/' for installation instructions.
+'''
+
+try:
+	import pygments
+	from pygments import formatters, lexers
+except ImportError, e:
+	Logs.warn(PYGMENTS_EXC_MSG)
+ 	raise e
 
 
 def options(opt):
@@ -217,14 +232,14 @@ class cppcheck(Task.Task):
 			defect['verbose'] = error.get('verbose')
 			for location in error.findall('location'):
 				defect['file'] = location.get('file')
-				defect['line'] = location.get('line')
+				defect['line'] = str(int(location.get('line')) - 1)
 			defects.append(defect)
 		return defects
 
 	def _create_html_report(self, defects):
-		files = self._create_html_files(defects)
+		files, css_style_defs = self._create_html_files(defects)
 		index = self._create_html_index(files)
-		self._create_css_file()
+		self._create_css_file(css_style_defs)
 		return index
 
 	def _create_html_files(self, defects):
@@ -238,6 +253,7 @@ class cppcheck(Task.Task):
 				sources[name].append(defect)
 		
 		files = {}
+		css_style_defs = None
 		bpath = self.generator.path.get_bld().abspath()
 		names = sources.keys()
 		for i in range(0,len(names)):
@@ -245,8 +261,8 @@ class cppcheck(Task.Task):
 			htmlfile = 'cppcheck/%i.html' % (i)
 			errors = sources[name]
 			files[name] = { 'htmlfile': '%s/%s' % (bpath, htmlfile), 'errors': errors }
-			self._create_html_file(name, htmlfile, errors)
-		return files
+			css_style_defs = self._create_html_file(name, htmlfile, errors)
+		return files, css_style_defs
 
 	def _create_html_file(self, sourcefile, htmlfile, errors):
 		name = self.generator.get_name()
@@ -269,15 +285,17 @@ class cppcheck(Task.Task):
 				hl_lines = [e['line'] for e in errors if e.has_key('line')]
 				formatter = CppcheckHtmlFormatter(linenos=True, style='colorful', hl_lines=hl_lines, lineanchors='line')
 				formatter.errors = [e for e in errors if e.has_key('line')]
+				css_style_defs = formatter.get_style_defs('.highlight')
 				lexer = pygments.lexers.guess_lexer_for_filename(sourcefile, "")
-				s = "%s" % pygments.highlight(srcnode.read(), lexer, formatter)
+				s = pygments.highlight(srcnode.read(), lexer, formatter)
 				table = ElementTree.fromstring(s)
 				content.append(table)
 
-		s = ElementTree.tostring(root, method="html")
+		s = ElementTree.tostring(root, method='html')
 		s = CCPCHECK_HTML_TYPE + s
 		node = self.generator.path.get_bld().find_or_declare(htmlfile)
 		node.write(s)
+		return css_style_defs
 
 	def _create_html_index(self, files):
 		name = self.generator.get_name()
@@ -298,7 +316,7 @@ class cppcheck(Task.Task):
 				content = div
 				self._create_html_table(content, files)
 
-		s = ElementTree.tostring(root, method="html")
+		s = ElementTree.tostring(root, method='html')
 		s = CCPCHECK_HTML_TYPE + s
 		node = self.generator.path.get_bld().find_or_declare('cppcheck/index.html')
 		node.write(s)
@@ -326,9 +344,12 @@ class cppcheck(Task.Task):
 				table.append(row)
 		content.append(table)
 
-	def _create_css_file(self):
+	def _create_css_file(self, css_style_defs):
+		css = str(CPPCHECK_CSS_FILE)
+		if css_style_defs:
+			css = "%s\n%s\n" % (css, css_style_defs)
 		node = self.generator.path.get_bld().find_or_declare('cppcheck/style.css')
-		node.write(CPPCHECK_CSS_FILE)
+		node.write(css)
 
 	def _errors_evaluate(self, errors, http_index):
 		name = self.generator.get_name()			
@@ -354,7 +375,7 @@ class CppcheckHtmlFormatter(pygments.formatters.HtmlFormatter):
 	errors = []
 
 	def wrap(self, source, outfile):
-		line_no = 2
+		line_no = 1
 		for i, t in super(CppcheckHtmlFormatter, self).wrap(source, outfile):
 			# If this is a source code line we want to add a span tag at the end.
 			if i == 1:
@@ -421,18 +442,18 @@ CPPCHECK_HTML_ERROR = \
 CPPCHECK_CSS_FILE = """
 body.body {
 	font-family: Arial;
-    font-size: 13px;
-    background-color: black;
-    padding: 0px;
-    margin: 0px;
+	font-size: 13px;
+	background-color: black;
+	padding: 0px;
+	margin: 0px;
 }
 
 .error {
-    font-family: Arial;
-    font-size: 13px;
-    background-color: #ffb7b7;
-    padding: 0px;
-    margin: 0px;
+	font-family: Arial;
+	font-size: 13px;
+	background-color: #ffb7b7;
+	padding: 0px;
+	margin: 0px;
 }
 
 th, td {
@@ -442,7 +463,7 @@ th, td {
 
 #page-header {
 	clear: both;
-	width: 900px;
+	width: 1200px;
 	margin: 20px auto 0px auto;
 	height: 10px;
 	border-bottom-width: 2px;
@@ -451,7 +472,7 @@ th, td {
 }
 
 #page {
-	width: 860px;
+	width: 1160px;
 	margin: auto;
 	border-left-width: 2px;
 	border-left-style: solid;
@@ -465,7 +486,7 @@ th, td {
 
 #page-footer {
 	clear: both;
-	width: 900px;
+	width: 1200px;
 	margin: auto;
 	height: 10px;
 	border-top-width: 2px;
@@ -499,7 +520,7 @@ th, td {
 
 #content {
 	float: left;
-	width: 720px;
+	width: 1020px;
 	margin: 5px;
 	padding: 0px 10px 10px 10px;
 	border-left-style: solid;
@@ -521,10 +542,6 @@ th, td {
 	float: left;
 	width: 33%;
 }
+
 """
-
-
-
-
-
 
