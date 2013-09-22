@@ -354,7 +354,7 @@ class CppcheckHtmlFormatter(pygments.formatters.HtmlFormatter):
 	errors = []
 
 	def wrap(self, source, outfile):
-		line_no = 1
+		line_no = 2
 		for i, t in super(CppcheckHtmlFormatter, self).wrap(source, outfile):
 			# If this is a source code line we want to add a span tag at the end.
 			if i == 1:
