@@ -5,5 +5,5 @@ def export(bld):
 	build(bld)
 
 def build(bld):
-	bld.program(target='chello', source=bld.path.ant_glob('src/*.c'), includes=['./include'])
+	bld.program(target='chello', source=bld.path.ant_glob('src/*.c'))
 
