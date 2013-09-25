@@ -1,8 +1,10 @@
 #! /usr/bin/env python
 # -*- encoding: utf-8 -*-
 
-import os, sys, datetime, shutil
-from waflib import Scripting, Options
+import os, sys
+from waflib import Scripting, Options, Logs
+from waflib.Build import BuildContext, CleanContext, InstallContext, UninstallContext
+from waftools.package import PackageContext
 from waftools import exporter
 
 top = '.'
@@ -12,6 +14,21 @@ prefix = 'output'
 VERSION = '0.0.1'
 APPNAME = 'beehive'
 
+
+if sys.platform in ['linux', 'linux2']:
+	VARIANTS = {'win64':'x86_64-w64-mingw32'}
+	CONTEXTS = (BuildContext, CleanContext, InstallContext, UninstallContext, PackageContext)
+	for name in VARIANTS.keys():
+		for context in CONTEXTS:
+			command = context.__name__.replace('Context', '').lower()
+			class tmp(context):
+				__doc__ = '%ss the project for %s' % (command, name)
+				cmd = '%s_%s' % (command, name)
+				variant = name
+else:
+	VARIANTS = {}
+
+
 def options(opt):
 	opt.add_option('--check_c_compiler', dest='check_c_compiler', default='gcc', action='store', help='Selects C compiler type.')
 	opt.add_option('--check_cxx_compiler', dest='check_cxx_compiler', default='gxx', action='store', help='Selects C++ compiler type.')
@@ -19,19 +36,33 @@ def options(opt):
 	opt.add_option('--debug', dest='debug', default=False, action='store_true', help='Build with debug information.')
 	opt.load('qooxdoo', tooldir='./waftools')
 	opt.load('cppcheck', tooldir='./waftools')
+	opt.load('package', tooldir='./waftools')
 	opt.load('exporter', tooldir='./waftools')
 
-def configure(conf):
-	conf.check_waf_version(mini='1.7.0')
-	conf.env.CFLAGS = ['-Wall']
-	conf.env.CXXFLAGS = ['-Wall']
-	if sys.platform.startswith('linux'):
-		conf.env.RPATH = ['/lib', '/usr/lib', '/usr/local/lib']
-		conf.env.append_unique('RPATH', '%s/lib' % conf.env.PREFIX)
+
+def _config(conf, variant, cc_prefix):
+	conf.msg('Creating environment', variant if variant else sys.platform, color='YELLOW')
+	if variant:
+		conf.setenv(variant)
+		prefix = '%s/opt/%s' % (conf.env.PREFIX.replace('\\', '/').rstrip('/'), variant)
+		conf.env.PREFIX = prefix
+		conf.env.BINDIR = '%s/bin' % (prefix)
+		conf.env.LIBDIR = '%s/lib' % (prefix)
+		conf.find_program('%s-gcc' % (cc_prefix), var='CC')
+		conf.find_program('%s-g++' % (cc_prefix), var='CXX')
+		conf.find_program('%s-ar'  % (cc_prefix), var='AR')
+	else:
+		conf.setenv('')
 	conf.load('compiler_c')
 	conf.load('compiler_cxx')
 	conf.load('qooxdoo')
 	conf.load('cppcheck')
+	conf.load('package', tooldir='./waftools')
+
+	conf.env.CFLAGS = ['-Wall']
+	conf.env.CXXFLAGS = ['-Wall']
+	conf.env.RPATH = ['/lib', '/usr/lib', '/usr/local/lib']
+	conf.env.append_unique('RPATH', '%s/lib' % conf.env.PREFIX)
 
 	if conf.options.debug:
 		conf.env.append_unique('CFLAGS', '-ggdb')
@@ -42,6 +73,15 @@ def configure(conf):
 		conf.env.append_unique('CFLAGS', '-O3')
 		conf.env.append_unique('CXXFLAGS', '-O3')
 		conf.env.append_unique('DEFINES', 'NDEBUG')
+
+
+def configure(conf):
+	conf.check_waf_version(mini='1.7.0')
+
+	for name, cc_prefix in VARIANTS.items():
+		_config(conf, name, cc_prefix)
+	_config(conf, None, None)
+
 
 def build(bld):
 	def get_scripts(root, script):
@@ -55,14 +95,15 @@ def build(bld):
 	for script in scripts:
 		bld.recurse(script)
 
+
 def export(bld):
 	exporter.execute(build, bld)
+
 
 def dist(ctx):
 	ctx.algo = 'tar.gz'
 	ctx.excl = ' **/*~ **/.lock-w* **/CVS/** **/.svn/** downloads/** ext/** build/** tmp/**'
 
-	
 
 
 
