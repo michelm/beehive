@@ -6,10 +6,32 @@
 import os
 import xml.etree.ElementTree as ElementTree
 from xml.dom import minidom
+from waflib import Build, Logs, Task
 
-from waflib import Build, Logs
-from waflib import Task
 
+def selected(bld):
+	return (set(bld.export_to) & set(['all','codeblocks']))
+
+def init(bld):
+	if not selected(bld):
+		return
+	Logs.warn('--> codeblocks.init(%s)' % type(bld))
+
+def process(task):
+	if not selected(task.generator.bld):
+		return
+	Logs.warn('--> codeblocks.process(%s)' % type(task))
+
+def postfun(bld):
+	if not selected(bld):
+		return
+	Logs.warn('--> codeblocks.postfun(%s)' % type(bld))
+
+
+
+
+
+#------------------------------------------------
 class Component(object):
 	pass
 

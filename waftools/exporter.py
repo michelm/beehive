@@ -93,41 +93,86 @@ Note that if the export should be skipped for specific wscript file you can
 also use an empty export function, containing only a pass statement.
 
 To actually trigger the export use the following command:
-	'waf clean export --export-makefile'
+	'waf clean export --export-to=makefile,codeblocks'
 
 Note that a clean is required in order for the export function to work.
 
 """
 
-from waflib import Build, Logs, Scripting
+from waflib import Build, Logs, Scripting, Task
 from wafexport import makefile
 from wafexport import codeblocks
 
+
 def options(opt):
-	opt.add_option('--export-makefile', dest='export_makefile', default=False, action='store_true', help='export waf c/c++ components to a makefile.')
-	opt.add_option('--export-codeblocks', dest='export_codeblocks', default=False, action='store_true', help='export waf c/c++ components to codeblocks projects.')
+	opt.add_option('--export-to', 
+		dest='export_to', 
+		default='makefile', 
+		action='store', 
+		help='export waf C/C++ components to etxternal formats, e.g. makefile, codeblocks (default=makefile)')
 
-class Exporter(Build.BuildContext):
-	'''export and convert waf project data (components) into the requested format (e.g. to a Makefile).'''
-	fun = 'export'
+
+class ExportContext(Build.BuildContext):
+	'''exports and converts projects into other formats (e.g. Makefiles).'''
+	fun = 'build'
 	cmd = 'export'
+	exporters = ('all', 'makefile', 'codeblocks')
 
-def execute(build, bld):
-	'''performs a clean build and passes the resulting build context to the selected export module.
-	'''
-	if bld.options.export_makefile:
-		pass
-	elif bld.options.export_codeblocks:
-		pass
-	else:
-		bld.fatal('no export format selected!')
-	
-	Scripting.run_command("clean")
-	build(bld)
+	def execute(self, *k, **kw):
+		self.export_to = self.options.export_to.split(',')
+		Logs.info('executing: %s --export-to=%s' % (self.cmd, ','.join(self.export_to)))
+		exporters = ExportContext.exporters
+		if not (set(self.export_to) & set(exporters)):
+			msg = 'Invalid export format(s); '
+			msg += 'selected(%s), supported(%s)' % (','.join(self.export_to), ','.join(exporters))
+			self.fatal(msg)
 
-	if bld.options.export_makefile:
-		makefile.export(bld)
-	elif bld.options.export_codeblocks:
-		codeblocks.export(bld)
+		# install special task.exec_command that will store the actual
+		# command that has been executed (self.command_executed) as well 
+		# as the working directory (self.path)
+		old_exec = Task.TaskBase.exec_command
+		def exec_command(self, *k, **kw):
+			ret = old_exec(self, *k, **kw)
+			try:
+				cmd = k[0]
+			except IndexError:
+				cmd = ''
+			finally:
+				self.command_executed = cmd
+			try:
+				cwd = kw['cwd']
+			except KeyError:
+				cwd = self.generator.bld.cwd
+			finally:
+				self.path = cwd
+			return ret
+		Task.TaskBase.exec_command = exec_command
+
+		# install special task.process that will process/convert the stored
+		# executed command srting and working directory
+		old_process = Task.TaskBase.process
+		def process(self):
+			old_process(self)
+			makefile.process(self)
+			codeblocks.process(self)
+		Task.TaskBase.process = process
+
+		# install post process that will export the processed and converted
+		# task data into the requested export format.
+		def postfun(self):
+			makefile.postfun(self)
+			codeblocks.postfun(self)
+		super(ExportContext, self).add_post_fun(postfun)
+
+		# remove previous build results
+		Scripting.run_command('clean')
+
+		# initialize exporters		
+		makefile.init(self)
+		codeblocks.init(self)
+
+		# start export
+		super(ExportContext, self).execute(*k, **kw)
+
 
 

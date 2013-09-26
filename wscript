@@ -5,7 +5,7 @@ import os, sys
 from waflib import Scripting, Options, Logs
 from waflib.Build import BuildContext, CleanContext, InstallContext, UninstallContext
 from waftools.package import PackageContext
-from waftools import exporter
+from waftools.exporter import ExportContext
 
 top = '.'
 out = 'build'
@@ -16,8 +16,8 @@ APPNAME = 'beehive'
 
 
 if sys.platform in ['linux', 'linux2']:
-	VARIANTS = {'win64':'x86_64-w64-mingw32'}
-	CONTEXTS = (BuildContext, CleanContext, InstallContext, UninstallContext, PackageContext)
+	VARIANTS = {'win32':'x86_64-w64-mingw32'}
+	CONTEXTS = (BuildContext, CleanContext, InstallContext, UninstallContext, PackageContext, ExportContext)
 	for name in VARIANTS.keys():
 		for context in CONTEXTS:
 			command = context.__name__.replace('Context', '').lower()
@@ -34,9 +34,9 @@ def options(opt):
 	opt.add_option('--check_cxx_compiler', dest='check_cxx_compiler', default='gxx', action='store', help='Selects C++ compiler type.')
 	opt.add_option('--prefix', dest='prefix', default=prefix, help='installation prefix [default: %r]' % prefix)
 	opt.add_option('--debug', dest='debug', default=False, action='store_true', help='Build with debug information.')
-	opt.load('qooxdoo', tooldir='./waftools')
-	opt.load('cppcheck', tooldir='./waftools')
-	opt.load('package', tooldir='./waftools')
+	#opt.load('qooxdoo', tooldir='./waftools')
+	#opt.load('cppcheck', tooldir='./waftools')
+	#opt.load('package', tooldir='./waftools')
 	opt.load('exporter', tooldir='./waftools')
 
 
@@ -55,9 +55,9 @@ def _config(conf, variant, cc_prefix):
 		conf.setenv('')
 	conf.load('compiler_c')
 	conf.load('compiler_cxx')
-	conf.load('qooxdoo')
-	conf.load('cppcheck')
-	conf.load('package', tooldir='./waftools')
+	#conf.load('qooxdoo')
+	#conf.load('cppcheck')
+	#conf.load('package', tooldir='./waftools')
 
 	conf.env.CFLAGS = ['-Wall']
 	conf.env.CXXFLAGS = ['-Wall']
@@ -94,10 +94,6 @@ def build(bld):
 	scripts = get_scripts('packages', 'wscript')
 	for script in scripts:
 		bld.recurse(script)
-
-
-def export(bld):
-	exporter.execute(build, bld)
 
 
 def dist(ctx):
