@@ -119,6 +119,7 @@ class ExportContext(Build.BuildContext):
 	exporters = ('all', 'makefile', 'codeblocks')
 
 	def execute(self, *k, **kw):
+		self.export_exception = None
 		self.export_to = self.options.export_to.split(',')
 		Logs.info('executing: %s --export-to=%s' % (self.cmd, ','.join(self.export_to)))
 		exporters = ExportContext.exporters
@@ -160,8 +161,20 @@ class ExportContext(Build.BuildContext):
 		# install post process that will export the processed and converted
 		# task data into the requested export format.
 		def postfun(self):
-			makefile.postfun(self)
-			codeblocks.postfun(self)
+			if not self.export_exception:
+				makefile.postfun(self)
+				codeblocks.postfun(self)
+			else:
+				fmt = self.export_exception[0]
+				err = self.export_exception[1]
+				tsk = self.export_exception[2]
+				cmd = tsk.command_executed
+				msg = "export failure:\n"
+				msg += " fmt='%s'\n" % (fmt)		
+				msg += " tsk='%s'\n" % (str(tsk).replace('\n',''))
+				msg += " err='%r'\n" % (err)
+				msg += " cmd='%s'\n" % ('\n     '.join(cmd))
+				self.fatal(msg)
 		super(ExportContext, self).add_post_fun(postfun)
 
 		# remove previous build results
