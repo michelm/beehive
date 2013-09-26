@@ -71,13 +71,16 @@ def _link_task(task):
 	bld = task.generator.bld
 	top = str(bld.bldnode.path_from(bld.path))
 
-	# create list of targets, but skip dll import libs (.dll.a); not needed as output target
-	lst = ["%s/%s" % (top, x.relpath()) for x in task.outputs if not str(x).endswith('.dll.a')]
+	# create list of targets
+	lst = ["%s/%s" % (top, o.relpath()) for o in task.outputs]
 	bld.makefile_targets.extend(lst)
 
-	# create list of dependencies, but skip dll import libs (.dll.a); not needed when linking by gcc
+	# create list of dependencies
 	deps = task.inputs + task.dep_nodes + bld.node_deps.get(task.uid(), [])
-	lst += ["%s/%s" % (top, x.relpath()) for x in deps if not str(x).endswith('.dll.a')]
+	lst += ["%s/%s" % (top, d.relpath()) for d in deps]
+
+	# remove dll import libs (.dll.a); not needed when linking with gcc
+	lst = [l for l in lst if not l.endswith('.dll.a')]
 
 	try:
 		if isinstance(task.command_executed, list):
@@ -114,8 +117,10 @@ def _export_makefile(bld):
 	bindir = str(bld.env.BINDIR)
 	libdir = str(bld.env.LIBDIR)
 	lines = []
+
+	tall = [t for t in targets if not t.endswith('.dll.a')]
 	lines.append("all: \\")
-	lines.append("\t%s" % ' \\\n\t'.join([t if t.endswith('.o') else os.path.basename(t) for t in targets]))
+	lines.append("\t%s" % ' \\\n\t'.join([t if t.endswith('.o') else os.path.basename(t) for t in tall]))
 
 	lines.append("")
 	lines.append("clean:")
@@ -126,23 +131,17 @@ def _export_makefile(bld):
 	lines.append("install:")
 	lines.append("\tmkdir -p %s" % bindir)
 	lines.append("\tmkdir -p %s" % libdir)
-	for tgt in [t for t in targets if not t.endswith('.a') and not t.endswith('.o')]:
-		f = os.path.basename(str(tgt))
-		if f.endswith('.so'):
-			p = libdir
-		else:
-			p = bindir
-		lines.append("\tcp %s  %s/%s" % (tgt,p,f))
+	for t in [t for t in targets if t.split('.')[-1] not in ('a','o','so')]:
+		lines.append("\tcp %s  %s/%s" % (t, bindir, os.path.basename(t)))
+	for t in [t for t in targets if t.endswith('so')]:
+		lines.append("\tcp %s  %s/%s" % (t, libdir, os.path.basename(t)))
 
 	lines.append("")
 	lines.append("uninstall:")
-	for tgt in [t for t in targets if not t.endswith('.a') and not t.endswith('.o')]:
-		f = os.path.basename(str(tgt))
-		if f.endswith('.so'):
-			p = libdir
-		else:
-			p = bindir
-		lines.append("\trm -rf  %s/%s" % (p,f))
+	for t in [t for t in targets if t.split('.')[-1] not in ('a','o','so')]:
+		lines.append("\trm -rf  %s/%s" % (bindir, os.path.basename(t)))
+	for t in [t for t in targets if t.endswith('so')]:
+		lines.append("\trm -rf  %s/%s" % (libdir, os.path.basename(t)))
 
 	for cmd in bld.makefile_commands:
 		if not cmd.startswith('\t'):
