@@ -1,9 +1,6 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 
-def export(bld):
-	build(bld)
-
 def build(bld):
 	bld.program(target='cxxhello', source=bld.path.ant_glob('src/*.cpp'))
 
