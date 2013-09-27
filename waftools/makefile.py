@@ -4,11 +4,12 @@
 """
 Tool Description
 ================
-This waftool can be used for the export and conversion of C/C++ task into
-Makefiles. When exporting all C/C++ tasks will be exported into one single
-makefile using all the compiler and linker directives as defined within the
-waf build environment. All tasks will be build and installed into the same
-location as they would when using the waf build environment. 
+This waftool can be used for the export and conversion of all C/C++ tasks 
+into a single Makefile. 
+
+When using the makefile all targets will be build and installed into the 
+same location nadu using the same compiler and linker directives as they 
+would have when using the waf build environment. 
 
 The generated makefile supports following arguments:
 	'make all'
@@ -23,9 +24,6 @@ a different install location, for example:
 
 Usage
 =====
-In order for this waftool to work a special export function must be added to
-each single wscript within your waf build environment as presented in the 
-example below:
 
 	.
 	├── hello
@@ -43,16 +41,22 @@ example below:
 	│					│
 	│					│def options(opt):
 	│					│	opt.load('makefile')
+	│					│	...
 	│					│
 	│					│def configure(conf):
+	│					│	conf.setenv('win32')
 	│					│	conf.load('makefile')
+	│					│	...
+	│					│	conf.setenv('')
+	│					│	conf.load('makefile')
+	│					│	...
 	│					│
 	│					│def build(bld):
 	│					│	bld.program(target='foo', source='bar.c')
 	│					│	bld.recurse('hello')
 	│					└────────────────────────────────────────────────
 	│
-	├── Makefile		<-- makefile for the default environment
+	├── Makefile		<-- exported makefile
 	└── hello-win32.mk	<-- makefile for the variant named 'win32'
 
 """
@@ -225,7 +229,7 @@ def makefile_export(bld):
 	Logs.warn('exported: %s' % node.abspath())
 
 
-class ExportContext(Build.BuildContext):
+class MakefileContext(Build.BuildContext):
 	'''exports and converts C/C++ tasks to MakeFile(s).'''
 	fun = 'build'
 	cmd = 'makefile'
@@ -273,11 +277,11 @@ class ExportContext(Build.BuildContext):
 				Logs.warn('makefile export failed: no suitable C/C++ targets found')
 			else:
 				makefile_export(self)
-		super(ExportContext, self).add_post_fun(postfun)
+		super(MakefileContext, self).add_post_fun(postfun)
 
 		# remove results form previous build (if any)
 		Scripting.run_command('clean')
 
 		# start export
-		super(ExportContext, self).execute(*k, **kw)
+		super(MakefileContext, self).execute(*k, **kw)
 

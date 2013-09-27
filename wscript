@@ -5,7 +5,7 @@ import os, sys
 from waflib import Scripting, Options, Logs
 from waflib.Build import BuildContext, CleanContext, InstallContext, UninstallContext
 from waftools.package import PackageContext
-from waftools.exporter import ExportContext
+from waftools.makefile import MakefileContext
 
 top = '.'
 out = 'build'
@@ -13,11 +13,13 @@ prefix = 'output'
 
 VERSION = '0.0.1'
 APPNAME = 'beehive'
-
+VARIANTS = {}
 
 if sys.platform in ['linux', 'linux2']:
-	VARIANTS = {'win32':'x86_64-w64-mingw32'}
-	CONTEXTS = (BuildContext, CleanContext, InstallContext, UninstallContext, PackageContext, ExportContext)
+	VARIANTS = { 'win32' : 'x86_64-w64-mingw32' }
+	CONTEXTS = ( BuildContext, CleanContext, InstallContext, UninstallContext, 
+		PackageContext, MakefileContext)
+
 	for name in VARIANTS.keys():
 		for context in CONTEXTS:
 			command = context.__name__.replace('Context', '').lower()
@@ -25,19 +27,35 @@ if sys.platform in ['linux', 'linux2']:
 				__doc__ = '%ss the project for %s' % (command, name)
 				cmd = '%s_%s' % (command, name)
 				variant = name
-else:
-	VARIANTS = {}
 
 
 def options(opt):
-	opt.add_option('--check_c_compiler', dest='check_c_compiler', default='gcc', action='store', help='Selects C compiler type.')
-	opt.add_option('--check_cxx_compiler', dest='check_cxx_compiler', default='gxx', action='store', help='Selects C++ compiler type.')
-	opt.add_option('--prefix', dest='prefix', default=prefix, help='installation prefix [default: %r]' % prefix)
-	opt.add_option('--debug', dest='debug', default=False, action='store_true', help='Build with debug information.')
+	opt.add_option('--check_c_compiler', 
+		dest='check_c_compiler',
+		default='gcc',
+		action='store',
+		help='Selects C compiler type.')
+
+	opt.add_option('--check_cxx_compiler',
+		dest='check_cxx_compiler',
+		default='gxx', action='store',
+		help='Selects C++ compiler type.')
+
+	opt.add_option('--prefix',
+		dest='prefix',
+		default=prefix,
+		help='installation prefix [default: %r]' % prefix)
+
+	opt.add_option('--debug',
+		dest='debug',
+		default=False,
+		action='store_true',
+		help='Build with debug information.')
+
 	#opt.load('qooxdoo', tooldir='./waftools')
 	#opt.load('cppcheck', tooldir='./waftools')
 	#opt.load('package', tooldir='./waftools')
-	opt.load('exporter', tooldir='./waftools')
+	opt.load('makefile', tooldir='./waftools')
 
 
 def _config(conf, variant, cc_prefix):
@@ -55,6 +73,7 @@ def _config(conf, variant, cc_prefix):
 		conf.setenv('')
 	conf.load('compiler_c')
 	conf.load('compiler_cxx')
+	conf.load('makefile')
 	#conf.load('qooxdoo')
 	#conf.load('cppcheck')
 	#conf.load('package', tooldir='./waftools')
