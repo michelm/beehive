@@ -5,10 +5,10 @@
 Tool Description
 ================
 This waftool can be used for the export and conversion of all C/C++ tasks 
-into a single Makefile. 
+defined within a waf project into a single Makefile. 
 
 When using the makefile all targets will be build and installed into the 
-same location nadu using the same compiler and linker directives as they 
+same location and using the same compiler and linker directives as they 
 would have when using the waf build environment. 
 
 The generated makefile supports following arguments:
@@ -18,12 +18,11 @@ The generated makefile supports following arguments:
 	'make uninstall'
 	'make <target>'
 
-Note that the makefile will use the PREFIX variable allowing users to specify
-a different install location, for example:
-	'make install PREFIX=/home/john'
-
-Usage
-=====
+Based on the example shown below, in which two build environments exist (one 
+for native host compilation and one for cross-compilation for win32 targets),
+two makefiles will be generated. The makefile for the native environment will
+be named 'MakeFile' while the makefile for the cross compilation environment 
+(i.e. being an variant) will be named; appname-variant.mk.
 
 	.
 	├── hello
@@ -59,13 +58,42 @@ Usage
 	├── Makefile		<-- exported makefile
 	└── hello-win32.mk	<-- makefile for the variant named 'win32'
 
+Remarks
+-------
+This module will ALLWAYS first remove any results from a previous build, i.e. 
+it will allways start with a 'waf clean', after which a normal build will be 
+started, during which the C/C++ tasks will be converted and exported. 
+
+Usage
+=====
+In order to use this tool add the following to the 'options' and 'configure'
+functions of the top wscript in the waf build environment:
+
+	options(opt):
+		opt.load('makefile')
+
+	configure(conf):
+		conf.load('makefile')
+
+In order to generate the makefile issue the following command:
+	'waf makefile'
+Or
+	'waf makefile_<variant>'
+
+Once the makefile has been generated it can be used 'as-is' without using waf, for
+example:
+	'make -f hello-win32.mk PREFIX=~/win32'
+
+Will start a cross-compilation build for the win32 environment using '~/win32'
+as the installation root.
 """
 
-import os, datetime
+import os, re, datetime
 from waflib import Build, Logs, Scripting, Task, Node, Context
 
 def options(opt): pass
 def configure(conf): pass
+
 
 def makefile_process(task):
 	'''(pre)processes and prepares the commands being executed per task into 
@@ -215,7 +243,7 @@ def makefile_export(bld):
 	header += "# time    : %s\n" % datetime.datetime.now()
 	header += "#\n"
 	header += "SHELL=/bin/sh\n"
-	header += "PREFIX=%s\n" % prefix
+	header += "PREFIX=%s\n" % re.sub('\A/home/.*/', '~/', prefix)
 	header += "\n"
 	content = "\n".join(lines)
 	content = content.replace(prefix, "$(PREFIX)")
