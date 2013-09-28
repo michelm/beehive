@@ -67,7 +67,7 @@ started, during which the C/C++ tasks will be converted and exported.
 Usage
 =====
 In order to use this tool add the following to the 'options' and 'configure'
-functions of the top wscript in the waf build environment:
+functions of the top level wscript in the waf build environment:
 
 	options(opt):
 		opt.load('makefile')
@@ -91,8 +91,57 @@ as the installation root.
 import os, re, datetime
 from waflib import Build, Logs, Scripting, Task, Node, Context
 
-def options(opt): pass
-def configure(conf): pass
+def options(opt):
+	pass
+
+def configure(conf): 
+	pass
+
+class MakefileContext(Build.BuildContext):
+	'''exports and converts C/C++ tasks to MakeFile(s).'''
+	fun = 'build'
+	cmd = 'makefile'
+
+	def execute(self, *k, **kw):
+		self.failure = None
+		self.commands = []
+		self.targets = []
+
+		old_exec = Task.TaskBase.exec_command
+		def exec_command(self, *k, **kw):
+			ret = old_exec(self, *k, **kw)
+			try:
+				cmd = k[0]
+			except IndexError:
+				cmd = ''
+			finally:
+				self.command_executed = cmd
+			try:
+				cwd = kw['cwd']
+			except KeyError:
+				cwd = self.generator.bld.cwd
+			finally:
+				self.path = cwd
+			return ret
+		Task.TaskBase.exec_command = exec_command
+
+		old_process = Task.TaskBase.process
+		def process(self):
+			old_process(self)
+			makefile_process(self)
+		Task.TaskBase.process = process
+
+		def postfun(self):
+			if self.failure:
+				makefile_show_failure(self)
+			elif not len(self.targets):
+				Logs.warn('makefile export failed: no suitable C/C++ targets found')
+			else:
+				makefile_export(self)
+		super(MakefileContext, self).add_post_fun(postfun)
+
+		Scripting.run_command('clean')
+		super(MakefileContext, self).execute(*k, **kw)
 
 
 def makefile_process(task):
@@ -107,15 +156,16 @@ def makefile_process(task):
 
 
 def makefile_compile(task):
-	'''converts a compile task into a makefile target.'''
+	'''converts a compile task into a makefile target.
+
+	extends list of makefile targets, converts the executed task command into
+	a makefile command and appends it to the list of makefile commands
+	'''
 	bld = task.generator.bld
-	top = bld.bldnode.path_from(bld.path)
-	
-	# create a list of makefile targets
+	top = bld.bldnode.path_from(bld.path)	
 	lst = ["%s/%s" % (top, o.relpath()) for o in task.outputs]
 	bld.targets.extend(lst)
 
-	# convert command_executed into a makefile command	
 	try:
 		if isinstance(task.command_executed, list):
 			t = bld.path.abspath()
@@ -140,22 +190,23 @@ def makefile_compile(task):
 
 
 def makefile_link(task):
-	'''converts a link task into a makefile target.'''
+	'''converts a link task into a makefile target.
+
+	extends list of makefile targets, converts the executed task command into
+	a makefile command and appends it to the list of makefile commands
+	
+	also add dependencies to external task (e.g. object, shared libraries), but 
+	excludes import libraries (ending with .dll.a).
+	'''
 	bld = task.generator.bld
 	top = bld.bldnode.path_from(bld.path)
-
-	# create list of targets
 	lst = ["%s/%s" % (top, o.relpath()) for o in task.outputs]
 	bld.targets.extend(lst)
 
-	# create list of dependencies
 	deps = task.inputs + task.dep_nodes + bld.node_deps.get(task.uid(), [])
 	lst += ["%s/%s" % (top, d.relpath()) for d in deps]
-
-	# remove dll import libs (.dll.a); not needed when linking with gcc
 	lst = [l for l in lst if not l.endswith('.dll.a')]
 
-	# convert command_executed into a makefile command	
 	try:
 		if isinstance(task.command_executed, list):
 			t = bld.path.abspath()
@@ -191,125 +242,79 @@ def makefile_show_failure(bld):
 
 
 def makefile_export(bld):
-	bindir = str(bld.env.BINDIR)
-	libdir = str(bld.env.LIBDIR)
-	lines = []
-
-	# makefile 'all'
-	tgt = [t for t in bld.targets if not t.endswith('.dll.a')]
-	tgt = [t if t.endswith('.o') else os.path.basename(t) for t in tgt]
-	lines.append("all: \\")
-	lines.append("\t%s" % ' \\\n\t'.join(tgt))
-
-	# makefile 'clean'
-	lines.append("")
-	lines.append("clean:")
-	for tgt in bld.targets:
-		lines.append("\trm -rf  %s" % tgt)
-
-	# makefile 'install'
-	lines.append("")
-	lines.append("install:")
-	lines.append("\tmkdir -p %s" % bindir)
-	lines.append("\tmkdir -p %s" % libdir)
-	for t in [t for t in bld.targets if t.split('.')[-1] not in ('a','o','so')]:
-		lines.append("\tcp %s  %s/%s" % (t, bindir, os.path.basename(t)))
-	for t in [t for t in bld.targets if t.endswith('so')]:
-		lines.append("\tcp %s  %s/%s" % (t, libdir, os.path.basename(t)))
-
-	# makefile 'uninstall'
-	lines.append("")
-	lines.append("uninstall:")
-	for t in [t for t in bld.targets if t.split('.')[-1] not in ('a','o','so')]:
-		lines.append("\trm -rf  %s/%s" % (bindir, os.path.basename(t)))
-	for t in [t for t in bld.targets if t.endswith('so')]:
-		lines.append("\trm -rf  %s/%s" % (libdir, os.path.basename(t)))
-
-	# makefile <task.name>
-	for cmd in bld.commands:
-		if not cmd.startswith('\t'):
-			lines.append("")
-		lines.append(cmd)
-	lines.append("\t\n")
-
-	prefix = str(bld.env.PREFIX)
 	appname = getattr(Context.g_module, Context.APPNAME, os.path.basename(bld.srcnode.abspath()))
 	version = getattr(Context.g_module, Context.VERSION, os.path.basename(bld.srcnode.abspath()))
-	header  = "# This makefile has been generated by waf.\n"
-	header += "#\n"
-	header += "# project : %s\n" % appname
-	header += "# version : %s\n" % version
-	header += "# waf     : %s\n" % Context.WAFVERSION
-	header += "# time    : %s\n" % datetime.datetime.now()
-	header += "#\n"
-	header += "SHELL=/bin/sh\n"
-	header += "PREFIX=%s\n" % re.sub('\A/home/.*/', '~/', prefix)
-	header += "\n"
-	content = "\n".join(lines)
-	content = content.replace(prefix, "$(PREFIX)")
+	prefix = str(bld.env.PREFIX)
+	bindir = str(bld.env.BINDIR)
+	libdir = str(bld.env.LIBDIR)
+	binaries = [t for t in bld.targets if t.split('.')[-1] not in ('a','o','so')] # treat dll as binary
+	libraries = [t for t in bld.targets if t.endswith('.so')]
+
+	tgt = [t if t.endswith('.o') else os.path.basename(t) for t in bld.targets if not t.endswith('.dll.a')]
+	tgt_all = " \\\n\t".join(tgt)
+	tgt_clean = "\n\t".join(["rm -rf %s" % t for t in bld.targets])
+
+	bini = ["cp %s %s/%s" % (b, bindir, os.path.basename(b)) for b in binaries]
+	libi = ["cp %s %s/%s" % (l, libdir, os.path.basename(l)) for l in libraries]
+	tgt_install = "\n\t".join(bini+libi)
+
+	binu = ["rm -rf %s/%s" % (bindir, os.path.basename(b)) for b in binaries]
+	libu = ["rm -rf %s/%s" % (libdir, os.path.basename(l)) for l in libraries]
+	tgt_uninstall = "\n\t".join(binu+libu)
+
+	tgt = [c if c.startswith('\t') else "\n%s" % (c) for c in bld.commands]
+	targets = str("\n".join(tgt)).lstrip('\n')
+
+	content = str(MAKEFILE_TEMPLATE)
+	content = re.sub('\$\(APPNAME\)', appname, content)
+	content = re.sub('\$\(VERSION\)', version, content)
+	content = re.sub('\$\(WAFVERSION\)', Context.WAFVERSION, content)
+	content = re.sub('\$\(DATETIME\)', str(datetime.datetime.now()), content)
+	content = re.sub('\$\(PREFIX\)', re.sub('\A/home/.*?/','~/',prefix), content)
+	content = re.sub('\$\(BINDIR\)', bindir, content)
+	content = re.sub('\$\(LIBDIR\)', libdir, content)
+	content = re.sub('\$\(TGT_ALL\)', tgt_all, content)
+	content = re.sub('\$\(TGT_CLEAN\)', tgt_clean, content)
+	content = re.sub('\$\(TGT_INSTALL\)', tgt_install, content)
+	content = re.sub('\$\(TGT_UNINSTALL\)', tgt_uninstall, content)
+	content = re.sub('\$\(TARGETS\)', targets, content)
+	content = re.sub(prefix, '$PREFIX', content)
 
 	if bld.variant:
 		name = '%s-%s.mk' % (appname, bld.variant)
 	else:
 		name = 'Makefile'
 	node = bld.path.make_node(name)
-	node.write(header + content)
+	node.write(content)
 	Logs.warn('exported: %s' % node.abspath())
 
 
-class MakefileContext(Build.BuildContext):
-	'''exports and converts C/C++ tasks to MakeFile(s).'''
-	fun = 'build'
-	cmd = 'makefile'
+MAKEFILE_TEMPLATE = '''# This makefile has been generated by waf.
+#
+# project : $(APPNAME)
+# version : $(VERSION)
+# waf     : $(WAFVERSION)
+# time    : $(DATETIME)
+#
+SHELL=/bin/sh
+PREFIX=$(PREFIX)
 
-	def execute(self, *k, **kw):
-		self.failure = None
-		self.commands = []
-		self.targets = []
+all: \\
+	$(TGT_ALL)
 
-		# install special task.exec_command that will store the actual
-		# command that has been executed (self.command_executed) as well 
-		# as the working directory (self.path)
-		old_exec = Task.TaskBase.exec_command
-		def exec_command(self, *k, **kw):
-			ret = old_exec(self, *k, **kw)
-			try:
-				cmd = k[0]
-			except IndexError:
-				cmd = ''
-			finally:
-				self.command_executed = cmd
-			try:
-				cwd = kw['cwd']
-			except KeyError:
-				cwd = self.generator.bld.cwd
-			finally:
-				self.path = cwd
-			return ret
-		Task.TaskBase.exec_command = exec_command
+clean:
+	$(TGT_CLEAN)
 
-		# install special task.process that will process/convert the stored
-		# executed command srting and working directory
-		old_process = Task.TaskBase.process
-		def process(self):
-			old_process(self)
-			makefile_process(self)
-		Task.TaskBase.process = process
+install:
+	mkdir -p $(BINDIR)
+	mkdir -p $(LIBDIR)
+	$(TGT_INSTALL)
 
-		# install post process that will export the processed and converted
-		# task data into the requested export format.
-		def postfun(self):
-			if self.failure:
-				makefile_show_failure(self)
-			elif not len(self.targets):
-				Logs.warn('makefile export failed: no suitable C/C++ targets found')
-			else:
-				makefile_export(self)
-		super(MakefileContext, self).add_post_fun(postfun)
+uninstall:
+	$(TGT_UNINSTALL)
 
-		# remove results form previous build (if any)
-		Scripting.run_command('clean')
+$(TARGETS)
 
-		# start export
-		super(MakefileContext, self).execute(*k, **kw)
+'''
+
 
