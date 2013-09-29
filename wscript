@@ -21,11 +21,13 @@ def options(opt):
 	opt.load('cppcheck', tooldir='./waftools')
 	opt.load('makefile', tooldir='./waftools')
 
+
 def configure(conf):
 	conf.check_waf_version(mini='1.7.0')
 	for name, cc_prefix in VARIANTS.items():
 		_configure(conf, name, cc_prefix)
 	_configure(conf, None, None)
+
 
 def build(bld):
 	def get_scripts(root, script):
@@ -38,9 +40,11 @@ def build(bld):
 	for script in scripts:
 		bld.recurse(script)
 
+
 def dist(ctx):
 	ctx.algo = 'tar.gz'
 	ctx.excl = ' **/*~ **/.lock-w* **/CVS/** **/.svn/** downloads/** ext/** build/** tmp/**'
+
 
 def _configure(conf, variant, cc_prefix):
 	conf.msg('Creating environment', variant if variant else sys.platform, color='YELLOW')
@@ -72,6 +76,7 @@ def _configure(conf, variant, cc_prefix):
 		conf.env.append_unique('CFLAGS', '-O3')
 		conf.env.append_unique('CXXFLAGS', '-O3')
 		conf.env.append_unique('DEFINES', 'NDEBUG')
+
 
 if sys.platform in ['linux', 'linux2']:
 	VARIANTS = { 'win32' : 'x86_64-w64-mingw32' }
