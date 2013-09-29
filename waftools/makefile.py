@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 # -*- encoding: utf-8 -*-
+# Michel Mooij, michel.mooij7@gmail.com
 
 """
 Tool Description
@@ -181,7 +182,7 @@ def makefile_compile(task):
 				cmd.append(c)
 			task.command_executed = ' \\\n\t'.join(cmd)
 	except Exception as exception:
-		bld.export_exception = (exception, task, task.command_executed)
+		bld.failure = (exception, task, getattr(task,"command_executed",[]))
 	else:
 		target = lst.pop(0)
 		bld.commands.append('%s:' % target)
@@ -224,8 +225,8 @@ def makefile_link(task):
 					c = "%s/%s" % (top, c)
 				cmd.append(c)
 			task.command_executed = ' \\\n\t'.join(cmd)
-	except Exception as e:
-		bld.export_exception = (exception, task, task.command_executed)
+	except Exception as exception:
+		bld.failure = (exception, task, getattr(task,"command_executed",[]))
 	else:
 		bld.commands.append('%s: \\' % os.path.basename(str(lst.pop(0))))
 		bld.commands.append('\t%s' % ' \\\n\t'.join([str(l) for l in lst]))
