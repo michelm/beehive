@@ -91,7 +91,7 @@ as the installation root.
 """
 
 import os, re, datetime
-from waflib import Build, Logs, Scripting, Task, Node, Context
+from waflib import Build, Logs, Scripting, Task, Node, Context,Tools
 
 def options(opt):
 	pass
@@ -150,10 +150,9 @@ def makefile_process(task):
 	'''(pre)processes and prepares the commands being executed per task into 
 	makefile targets and makefile commands.
 	'''
-	name = task.__class__.__name__
-	if name in ('c','cxx'):
+	if isinstance(task, Tools.c.c) or isinstance(task, Tools.cxx.cxx):
 		makefile_compile(task)
-	elif name in ('cprogram', 'cshlib', 'cstlib', 'cxxprogram', 'cxxshlib', 'cxxstlib'):
+	elif isinstance(task, Tools.ccroot.link_task):
 		makefile_link(task)
 
 
@@ -197,8 +196,8 @@ def makefile_link(task):
 	extends list of makefile targets, converts the executed task command into
 	a makefile command and appends it to the list of makefile commands
 	
-	also add dependencies to external task (e.g. object, shared libraries), but 
-	excludes import libraries (ending with .dll.a).
+	also add dependencies to external task (e.g. object, shared libraries), 
+	but excludes import libraries (ending with .dll.a).
 	'''
 	bld = task.generator.bld
 	top = bld.bldnode.path_from(bld.path)
@@ -244,18 +243,20 @@ def makefile_show_failure(bld):
 
 
 def makefile_export(bld):
+	targets = bld.targets
 	srcnode = os.path.basename(bld.srcnode.abspath())
 	appname = getattr(Context.g_module, Context.APPNAME, srcnode)
 	version = getattr(Context.g_module, Context.VERSION, srcnode)
 	prefix = str(bld.env.PREFIX)
 	bindir = str(bld.env.BINDIR)
 	libdir = str(bld.env.LIBDIR)
-	binaries = [t for t in bld.targets if t.split('.')[-1] not in ('a','o','so')] # treat dll as binary
-	libraries = [t for t in bld.targets if t.endswith('.so')]
+	binaries = [t for t in targets if t.split('.')[-1] not in ('a','o','so')]
+	libraries = [t for t in targets if t.endswith('.so')] # treat dll as bin
 
-	tgt = [t if t.endswith('.o') else os.path.basename(t) for t in bld.targets if not t.endswith('.dll.a')]
+	tgt = [t for t in targets if not t.endswith('.dll.a')] # skip import libs
+	tgt = [t if t.endswith('.o') else os.path.basename(t) for t in tgt]
 	tgt_all = " \\\n\t".join(tgt)
-	tgt_clean = "\n\t".join(["rm -rf %s" % t for t in bld.targets])
+	tgt_clean = "\n\t".join(["rm -rf %s" % t for t in targets])
 
 	bini = ["cp %s %s/%s" % (b, bindir, os.path.basename(b)) for b in binaries]
 	libi = ["cp %s %s/%s" % (l, libdir, os.path.basename(l)) for l in libraries]
@@ -268,27 +269,27 @@ def makefile_export(bld):
 	tgt = [c if c.startswith('\t') else "\n%s" % (c) for c in bld.commands]
 	targets = str("\n".join(tgt)).lstrip('\n')
 
-	content = str(MAKEFILE_TEMPLATE)
-	content = re.sub('\$\(APPNAME\)', appname, content)
-	content = re.sub('\$\(VERSION\)', version, content)
-	content = re.sub('\$\(WAFVERSION\)', Context.WAFVERSION, content)
-	content = re.sub('\$\(DATETIME\)', str(datetime.datetime.now()), content)
-	content = re.sub('\$\(PREFIX\)', re.sub('\A/home/.*?/','~/',prefix), content)
-	content = re.sub('\$\(BINDIR\)', bindir, content)
-	content = re.sub('\$\(LIBDIR\)', libdir, content)
-	content = re.sub('\$\(TGT_ALL\)', tgt_all, content)
-	content = re.sub('\$\(TGT_CLEAN\)', tgt_clean, content)
-	content = re.sub('\$\(TGT_INSTALL\)', tgt_install, content)
-	content = re.sub('\$\(TGT_UNINSTALL\)', tgt_uninstall, content)
-	content = re.sub('\$\(TARGETS\)', targets, content)
-	content = re.sub(prefix, '$PREFIX', content)
+	s = str(MAKEFILE_TEMPLATE)
+	s = re.sub('\$\(APPNAME\)', appname, s)
+	s = re.sub('\$\(VERSION\)', version, s)
+	s = re.sub('\$\(WAFVERSION\)', Context.WAFVERSION, s)
+	s = re.sub('\$\(DATETIME\)', str(datetime.datetime.now()), s)
+	s = re.sub('\$\(PREFIX\)', re.sub('\A/home/.*?/','~/',prefix), s)
+	s = re.sub('\$\(BINDIR\)', bindir, s)
+	s = re.sub('\$\(LIBDIR\)', libdir, s)
+	s = re.sub('\$\(TGT_ALL\)', tgt_all, s)
+	s = re.sub('\$\(TGT_CLEAN\)', tgt_clean, s)
+	s = re.sub('\$\(TGT_INSTALL\)', tgt_install, s)
+	s = re.sub('\$\(TGT_UNINSTALL\)', tgt_uninstall, s)
+	s = re.sub('\$\(TARGETS\)', targets, s)
+	s = re.sub(prefix, '$PREFIX', s)
 
 	if bld.variant:
 		name = '%s-%s.mk' % (appname, bld.variant)
 	else:
 		name = 'Makefile'
 	node = bld.path.make_node(name)
-	node.write(content)
+	node.write(s)
 	Logs.warn('exported: %s' % node.abspath())
 
 
