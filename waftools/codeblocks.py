@@ -150,6 +150,7 @@ def codeblocks_get_compiler(bld, cc):
 
 def codeblocks_project(bld, path, component):
 	prefix = bld.path.abspath().replace('\\','/')
+	bpath = re.sub(prefix, '..', bld.path.get_bld().abspath())
 
 	# determine compile options and include path
 	cflags = []
@@ -158,7 +159,8 @@ def codeblocks_project(bld, path, component):
 		obj = bld.components[key]
 		for cmd in obj.command:
 			if cmd.startswith('-I'):
-				includes.append(re.sub(prefix, '..', cmd.lstrip('-I')))
+				include = re.sub(prefix, '..', cmd.lstrip('-I'))
+				includes.append(include)
 			elif cmd.startswith('-') and cmd not in ['-c','-o']:
 				cflags.append(cmd)
 	cflags = list(set(cflags))
@@ -174,7 +176,7 @@ def codeblocks_project(bld, path, component):
 		if cmd.startswith('-l'):
 			libs.append(cmd.lstrip('-l'))
 		elif cmd.startswith('-L'):
-			libpaths.append('%s/%s' % (re.sub(prefix, '..', bld.path.abspath()), cmd.lstrip('-L')))
+			libpaths.append('%s/%s' % (bpath, cmd.lstrip('-L')))
 	libs = list(set(libs))
 	libpaths = list(set(libpaths))
 	depends = list(libs)
@@ -229,6 +231,7 @@ def codeblocks_project(bld, path, component):
 		ElementTree.SubElement(compiler, 'Add', attrib={'option':cflag})
 	for include in includes:
 		ElementTree.SubElement(compiler, 'Add', attrib={'directory':include})
+
 	if len(lflags) or len(libs) or len(libpaths):
 		linker = ElementTree.SubElement(target, 'Linker')
 		for lflag in lflags:
