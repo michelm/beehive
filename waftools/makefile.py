@@ -91,13 +91,16 @@ as the installation root.
 """
 
 import os, re, datetime
-from waflib import Build, Logs, Scripting, Task, Node, Context, Tools
+from waflib import Build, Logs, Scripting, Task, Context, Tools
+
 
 def options(opt):
 	pass
 
+
 def configure(conf): 
 	pass
+
 
 class MakefileContext(Build.BuildContext):
 	'''exports and converts C/C++ tasks to MakeFile(s).'''
@@ -130,23 +133,23 @@ class MakefileContext(Build.BuildContext):
 		old_process = Task.TaskBase.process
 		def process(self):
 			old_process(self)
-			makefile_process(self)
+			task_process(self)
 		Task.TaskBase.process = process
 
 		def postfun(self):
 			if self.failure:
-				makefile_show_failure(self)
+				build_show_failure(self)
 			elif not len(self.targets):
 				Logs.warn('makefile export failed: no C/C++ targets found')
 			else:
-				makefile_export(self)
+				build_postfun(self)
 		super(MakefileContext, self).add_post_fun(postfun)
 
 		Scripting.run_command('clean')
 		super(MakefileContext, self).execute(*k, **kw)
 
 
-def makefile_process(task):
+def task_process(task):
 	'''(pre)processes and prepares the commands being executed per task into 
 	makefile targets and makefile commands.
 	'''
@@ -233,7 +236,7 @@ def makefile_link(task):
 		bld.commands.append('\t%s' % task.command_executed)
 
 
-def makefile_show_failure(bld):
+def build_show_failure(bld):
 	(err, tsk, cmd) = bld.failure
 	msg = "export failure:\n"
 	msg += " tsk='%s'\n" % (str(tsk).replace('\n',''))
@@ -242,7 +245,7 @@ def makefile_show_failure(bld):
 	bld.fatal(msg)
 
 
-def makefile_export(bld):
+def build_postfun(bld):
 	targets = bld.targets
 	srcnode = os.path.basename(bld.srcnode.abspath())
 	appname = getattr(Context.g_module, Context.APPNAME, srcnode)
