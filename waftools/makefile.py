@@ -90,7 +90,9 @@ will start a cross-compilation build for the win32 environment using '~/win32'
 as the installation root.
 """
 
-import os, re, datetime
+import os
+import re
+import datetime
 from waflib import Build, Logs, Scripting, Task, Context, Tools
 
 

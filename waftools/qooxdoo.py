@@ -68,9 +68,11 @@ def options(opt):
 	opt.add_option('--qooxdoo-cmd', dest='qooxdoo_cmd', default=None, action='store', help='qooxdoo generate.py <command>.')
 	opt.add_option('--qooxdoo-skip', dest='qooxdoo_skip', default=False, action='store_true', help='skip qooxdoo tasks (default=False).')
 
+
 def configure(conf):
 	if conf.options.qooxdoo_skip:
 		conf.env.QOOXDOO_SKIP = [True]
+
 
 class qooxdoo(Task.Task):
 	def run(self):
@@ -78,6 +80,7 @@ class qooxdoo(Task.Task):
 		tgt = self.outputs[0].abspath()
 		cmd = "python %s %s -I -l %s" % (src, self.cmd, tgt)
 		return self.exec_command(cmd)
+
 
 @TaskGen.feature('qooxdoo')
 def qooxdoo_generate(self):
@@ -107,6 +110,7 @@ def qooxdoo_generate(self):
 	if _qooxdoo_selected(self, name):
 		_qooxdoo_install(self)
 
+
 @TaskGen.taskgen_method
 def qooxdoo_clean(self):
 	if not self.bld.cmd.startswith('clean'):
@@ -126,9 +130,11 @@ def qooxdoo_clean(self):
 			cmd = "python %s clean" % source.abspath()
 			self.bld.exec_command(cmd)
 
+
 def _qooxdoo_selected(self, name):
 	targets = self.bld.targets
 	return not len(targets) or name in targets.split(',')
+
 
 def _qooxdoo_get_attributes(self):
 	name = self.get_name()
@@ -146,6 +152,7 @@ def _qooxdoo_get_attributes(self):
 	if not source:
 		self.bld.fatal("qooxdoo generate.py not found in '%s'. task='%s', script='%s'" % (top.abspath(), name, script))
 	return (name, top, source)
+
 
 def _qooxdoo_install(self):
 	name, top, source = _qooxdoo_get_attributes(self)
