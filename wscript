@@ -25,9 +25,9 @@ def configure(conf):
 	conf.check_waf_version(mini='1.7.0')
 	conf.load('compiler_c')
 	conf.load('compiler_cxx')
+	conf.load('cppcheck')
 	conf.load('makefile')
 	conf.load('codeblocks')
-	conf.load('cppcheck')
 	conf.env.CFLAGS = ['-Wall']
 	conf.env.CXXFLAGS = ['-Wall']
 	conf.env.RPATH = ['/lib', '/usr/lib', '/usr/local/lib']

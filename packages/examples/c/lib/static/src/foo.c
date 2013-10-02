@@ -1,5 +1,7 @@
+#include <foo.h>
 
-char* foo(){
+char* foo()
+{
 	return "fucked up";
 }
 

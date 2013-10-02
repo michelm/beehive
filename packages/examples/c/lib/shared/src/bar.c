@@ -1,4 +1,6 @@
+#include <bar.h>
 
-char* bar(){
+char* bar()
+{
 	return "beyond all recognition";
 }

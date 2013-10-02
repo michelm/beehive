@@ -1,67 +1,144 @@
 #! /usr/bin/env python
 # -*- encoding: utf-8 -*-
-#
-# TODO: detect and export cross-compile settings
+# Michel Mooij, michel.mooij7@gmail.com
+
+"""
+Tool Description
+================
+This waftool can be used for the export and conversion of all C/C++ tasks 
+defined within a waf project to Code::BLocks projects and workspaces. 
+
+When exporting to Code::Blocks a project file will be created for each C/C++
+link task (i.e. programs, static- and shared libraries). Dependencies between 
+projects will be stored in a single Code::Blocks workspace file. Both the
+resulting workspace and project files will be stored in a codeblocks directory
+located in the top level directory of your waf build environment.
+
+Usage
+=====
+In order to use this tool add the following to the 'options' and 'configure'
+functions of the top level wscript in the waf build environment:
+
+	options(opt):
+		opt.load('codeblocks')
+
+	configure(conf):
+		conf.load('codeblocks')
+
+"""
 
 import os
+import re
 import xml.etree.ElementTree as ElementTree
 from xml.dom import minidom
-from waflib import Build, Logs, Task
-
-class Component(object): pass
+from waflib import Build, Scripting, Logs, Task, Tools
 
 
-def init(bld):
-	if not _selected(bld):
+def options(opt):
+	pass
+
+
+def configure(conf): 
+	pass
+
+
+class Component(object): 
+	'''class used for storing task properties.'''
+	pass
+
+
+class MakefileContext(Build.BuildContext):
+	'''exports and converts C/C++ tasks to MakeFile(s).'''
+	fun = 'build'
+	cmd = 'codeblocks'
+
+	def execute(self, *k, **kw):
+		self.failure = None
+		self.components = {}
+
+		old_exec = Task.TaskBase.exec_command
+		def exec_command(self, *k, **kw):
+			ret = old_exec(self, *k, **kw)
+			try:
+				cmd = k[0]
+			except IndexError:
+				cmd = ''
+			finally:
+				self.command_executed = cmd
+			try:
+				cwd = kw['cwd']
+			except KeyError:
+				cwd = self.generator.bld.cwd
+			finally:
+				self.path = cwd
+			return ret
+		Task.TaskBase.exec_command = exec_command
+
+		old_process = Task.TaskBase.process
+		def process(self):
+			old_process(self)
+			task_process(self)
+		Task.TaskBase.process = process
+
+		def postfun(self):
+			if self.failure:
+				build_show_failure(self)
+			elif not len(self.components):
+				Logs.warn('codeblocks export failed: no C/C++ targets found')
+			else:
+				build_postfun(self)
+		super(MakefileContext, self).add_post_fun(postfun)
+
+		Scripting.run_command('clean')
+		super(MakefileContext, self).execute(*k, **kw)
+
+
+def task_process(task):	
+	if isinstance(task, Tools.c.c) or isinstance(task, Tools.cxx.cxx):
+		islinked = False
+	elif isinstance(task, Tools.ccroot.link_task):
+		islinked = True
+	else:
 		return
-	bld.codeblocks_components = {}
 
-
-def process(task):
 	bld = task.generator.bld
-	if not _selected(bld):
-		return
-	cls = task.__class__.__name__
-	if cls not in ('c','cxx', 'cprogram', 'cshlib', 'cstlib', 'cxxprogram', 'cxxshlib', 'cxxstlib'):
-		return
 	key = task.outputs[0].abspath()
 	c = Component()
 	c.name = os.path.basename(key)
-	c.type = cls
+	c.type = str(task.__class__.__name__).lstrip('cxx')
+	c.islinked = islinked
 	c.inputs = [x.abspath() for x in task.inputs]
 	c.outputs = [x.abspath() for x in task.outputs]
 	c.depends = [x.abspath() for x in list(task.dep_nodes + bld.node_deps.get(task.uid(), []))]
 	c.command = [str(x) for x in task.command_executed]
-	c.compiler =  _codeblocks_get_compiler(bld, c.command[0])
-	bld.codeblocks_components[key] = c
+	c.compiler =  codeblocks_get_compiler(bld, c.command[0])
+	bld.components[key] = c
 
 
-def postfun(bld):
-	if not _selected(bld):
-		return
+def build_show_failure(bld):
+	(err, tsk, cmd) = bld.failure
+	msg = "export failure:\n"
+	msg += " tsk='%s'\n" % (str(tsk).replace('\n',''))
+	msg += " err='%r'\n" % (err)
+	msg += " cmd='%s'\n" % ('\n     '.join(cmd))
+	bld.fatal(msg)
+
+
+def build_postfun(bld):
 	path = "%s/codeblocks" % bld.path.abspath()
 	if not os.path.exists(path):
 		os.makedirs(path)
-
-	components = bld.codeblocks_components
 	projects = {}
-
-	for key, component in components.items():
-		if component.type in ('cprogram', 'cshlib', 'cstlib', 'cxxprogram', 'cxxshlib', 'cxxstlib'):
-			(fname, depends) = _codeblocks_project(bld, path, component)
+	for component in bld.components.values():
+		if component.islinked:
+			(fname, depends) = codeblocks_project(bld, path, component)
 			Logs.warn('exported: %s, dependencies: %s' % (fname,depends))
 			projects[os.path.basename(fname)] = depends
-	fname = _codeblocks_workspace(path, projects)
+	fname = codeblocks_workspace(path, projects)
 	Logs.warn('exported: %s' % fname)
 
 
-def _selected(bld):
-	'''returns True when this export formatter has been selected.'''
-	return (set(bld.export_to) & set(['all','codeblocks']))
-
-
-def _codeblocks_get_compiler(bld, cc):
-	dest_os = bld.env.DEST_OS
+def codeblocks_get_compiler(bld, cc):
 	dest_cpu = bld.env.DEST_CPU
 	cc = os.path.basename(cc)
 	if 'mingw32' in cc:
@@ -71,15 +148,17 @@ def _codeblocks_get_compiler(bld, cc):
 	return cc
 
 
-def _codeblocks_project(bld, path, component):
+def codeblocks_project(bld, path, component):
+	prefix = bld.path.abspath().replace('\\','/')
+
 	# determine compile options and include path
 	cflags = []
 	includes = []
 	for key in component.inputs:
-		obj = bld.codeblocks_components[key]
+		obj = bld.components[key]
 		for cmd in obj.command:
 			if cmd.startswith('-I'):
-				includes.append(cmd.lstrip('-I'))
+				includes.append(re.sub(prefix, '..', cmd.lstrip('-I')))
 			elif cmd.startswith('-') and cmd not in ['-c','-o']:
 				cflags.append(cmd)
 	cflags = list(set(cflags))
@@ -87,6 +166,7 @@ def _codeblocks_project(bld, path, component):
 
 	# determine link options, libs and link paths
 	lflags = [c for c in component.command if c.startswith('-Wl')]
+	lflags = [re.sub('/home/.*?/', '~/', lflag) for lflag in lflags]
 	lflags = list(set(lflags))
 	libs = []
 	libpaths = []
@@ -94,7 +174,7 @@ def _codeblocks_project(bld, path, component):
 		if cmd.startswith('-l'):
 			libs.append(cmd.lstrip('-l'))
 		elif cmd.startswith('-L'):
-			libpaths.append('%s/%s' % (bld.path.get_bld().abspath(), cmd.lstrip('-L')))
+			libpaths.append('%s/%s' % (re.sub(prefix, '..', bld.path.abspath()), cmd.lstrip('-L')))
 	libs = list(set(libs))
 	libpaths = list(set(libpaths))
 	depends = list(libs)
@@ -127,7 +207,7 @@ def _codeblocks_project(bld, path, component):
 	if '-ggdb' in cflags:
 		title += '-debug'
 
-	ctypes = { 'cprogram': '1', 'cshlib': '3', 'cstlib': '2', 'cxxprogram': '1', 'cxxshlib': '3', 'cxxstlib': '2' }
+	ctypes = { 'program': '1', 'shlib': '3', 'stlib': '2' }
 	ctype = ctypes[component.type]
 	coutput = str(component.outputs[0])
 
@@ -136,9 +216,9 @@ def _codeblocks_project(bld, path, component):
 	target.set('title', title)
 	for option in target.iter('Option'):
 		if option.get('output'):
-			option.set('output', coutput)
+			option.set('output', re.sub(prefix, '..', coutput))
 		if option.get('object_output'):
-			option.set('object_output', '%s' % os.path.dirname(coutput))
+			option.set('object_output', '%s' % re.sub(prefix, '..', os.path.dirname(coutput)))
 		if option.get('type'):
 			option.set('type', ctype)
 		if option.get('compiler'):
@@ -162,14 +242,13 @@ def _codeblocks_project(bld, path, component):
 	# add (new) source file(s)
 	sources = []
 	for key in component.inputs:
-		obj = bld.codeblocks_components[key]
+		obj = bld.components[key]
 		for src in obj.inputs:
-			sources.append(src)
+			sources.append(re.sub(prefix, '..', src))
 	for unit in project.iter('Unit'):
 		src = str(unit.get('filename')).replace('\\','/')
-		if src.startswith('../'):
-			src = '%s%s' % (bld.path.abspath(), src[2:])
-		sources.remove(src)
+		while sources.count(src):
+			sources.remove(src)
 
 	for src in sources:
 		unit = ElementTree.fromstring(CODEBLOCKS_CBP_UNIT)
@@ -181,11 +260,11 @@ def _codeblocks_project(bld, path, component):
 		project.append(extension)
 
 	# prettify and export project data
-	_codeblocks_save(fname, root)
+	codeblocks_save(fname, root)
 	return (fname, depends)
 
 
-def _codeblocks_save(fname, root):
+def codeblocks_save(fname, root):
 	s = ElementTree.tostring(root)
 	content = minidom.parseString(s).toprettyxml(indent="\t")
 	lines = [l for l in content.splitlines() if not l.isspace() and len(l)]
@@ -194,7 +273,7 @@ def _codeblocks_save(fname, root):
 		f.write('\n'.join(lines))
 
 
-def _codeblocks_workspace(path, projects):
+def codeblocks_workspace(path, projects):
 	# open existing workspace or create a new one from template
 	fname = '%s/codeblocks.workspace' % path
 	if os.path.exists(fname):
@@ -221,7 +300,7 @@ def _codeblocks_workspace(path, projects):
 		if len(depends):
 			for depend in depends:
 				ElementTree.SubElement(project, 'Depends', attrib={'filename':depend})
-	_codeblocks_save(fname, root)
+	codeblocks_save(fname, root)
 	return fname
 
 

@@ -2,5 +2,10 @@
 # -*- encoding: utf-8 -*-
 
 def build(bld):
-	bld.shlib(target='cshlib-example', source=bld.path.ant_glob('src/*.c'))
+	bld.shlib(
+		target='cshlib-example',
+		source=bld.path.ant_glob('src/*.c'),
+		includes=['./include'],
+		export_includes=['./include']
+	)
 

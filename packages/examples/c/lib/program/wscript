@@ -2,5 +2,9 @@
 # -*- encoding: utf-8 -*-
 
 def build(bld):
-	bld.program(target='cprogram-example', source=bld.path.ant_glob('src/*.c'), use=['cstlib-example','cshlib-example'])
+	bld.program(
+		target='cprogram-example', 
+		source=bld.path.ant_glob('src/*.c'),
+		use=['cstlib-example','cshlib-example']
+	)
 

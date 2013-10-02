@@ -2,5 +2,9 @@
 # -*- encoding: utf-8 -*-
 
 def build(bld):
-	bld.program(target='chello', source=bld.path.ant_glob('src/*.c'))
+	bld.program(
+		target='chello',
+		source=bld.path.ant_glob('src/*.c'),
+		includes=['./include']
+	)
 
