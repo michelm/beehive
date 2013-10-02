@@ -111,7 +111,7 @@ def task_process(task):
 	c.outputs = [x.abspath() for x in task.outputs]
 	c.depends = [x.abspath() for x in list(task.dep_nodes + bld.node_deps.get(task.uid(), []))]
 	c.command = [str(x) for x in task.command_executed]
-	c.compiler =  codeblocks_get_compiler(bld, c.command[0])
+	c.compiler = codeblocks_get_compiler(bld)
 	bld.components[key] = c
 
 
@@ -138,13 +138,13 @@ def build_postfun(bld):
 	Logs.warn('exported: %s' % fname)
 
 
-def codeblocks_get_compiler(bld, cc):
+def codeblocks_get_compiler(bld):
+	cc = os.path.basename(bld.env.CC[0])
 	dest_cpu = bld.env.DEST_CPU
-	cc = os.path.basename(cc)
-	if 'mingw32' in cc:
-		cc = 'mingw32gcc'
-	elif dest_cpu == 'arm':
+	if dest_cpu == 'arm':
 		cc = 'armelfgcc'
+	elif dest_cpu == 'ppc':
+		cc = 'ppcgcc'
 	return cc
 
 
